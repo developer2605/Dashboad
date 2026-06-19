@@ -11,10 +11,12 @@ Dashboard React + TypeScript + Vite để thống kê dữ liệu quảng cáo t
 
 ## Cấu hình Google Sheet
 
-Tạo file `.env` ở thư mục dự án và đặt:
+Tạo file `.env` ở thư mục dự án và đặt 2 nguồn Google Sheet:
 
 ```env
 VITE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/export?format=csv&gid=0
+VITE_PERFORMANCE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_PERFORMANCE_SHEET_ID/export?format=csv&gid=0
+VITE_PHONE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_PHONE_SHEET_ID/export?format=csv&gid=0
 VITE_ADMIN_EMAIL=admin@gmail.com
 VITE_ADMIN_PASSWORD=doi-mat-khau-nay
 VITE_ADMIN_PHONE=0900000000
@@ -23,20 +25,22 @@ VITE_ADMIN_ZALO=0900000000
 VITE_ADMIN_FACEBOOK=https://facebook.com/your.profile
 ```
 
-Nếu chưa cấu hình biến này, app tự dùng dữ liệu mẫu để kiểm tra giao diện.
+Nếu chưa cấu hình link, app tự dùng dữ liệu mẫu riêng cho từng nguồn để kiểm tra giao diện.
 
-Trong giao diện app cũng có ô `Link Google Sheet CSV`; link nhập ở đây sẽ được lưu trên trình duyệt và ưu tiên hơn `.env`. Nút `Tải mẫu trường` tải file CSV mẫu với đúng các cột app hỗ trợ.
+Trong giao diện app có 2 ô link: `Link nguồn hiệu quả ads` và `Link nguồn danh sách SĐT`. Link nhập ở đây được lưu trên trình duyệt và ưu tiên hơn `.env`. App có 2 nút tải mẫu TSV: `Mẫu ads` và `Mẫu SĐT`.
 
 ## Cột dữ liệu hỗ trợ
 
-App đọc các cột chuẩn: `date`, `page`, `adAccount`, `service`, `spend`, `messages`, `comments`, `phone`, `adId`, `gender`.
+Nguồn hiệu quả ads đọc các cột chuẩn: `date`, `adId`, `spend`, `messages`, `comments`, `phoneCount`, `adAccount`, `page`, `service`.
 
-Các tên cột tiếng Việt phổ biến cũng được nhận diện, ví dụ: `ngày`, `tài khoản quảng cáo`, `dịch vụ`, `số tiền chi tiêu`, `số mess`, `bình luận`, `số điện thoại`, `ad id`, `giới tính`.
+Nguồn danh sách SĐT đọc các cột chuẩn: `date`, `phone`, `adId`, `adAccount`, `page`, `service`, `gender`.
+
+Các tên cột tiếng Việt phổ biến cũng được nhận diện, ví dụ: `ngày`, `tài khoản quảng cáo`, `dịch vụ`, `số tiền chi tiêu`, `số mess`, `bình luận`, `số điện thoại`, `số lượng sđt`, `ad id`, `giới tính`.
 
 ## Bảng dữ liệu
 
-- Bảng 1 tổng hợp theo `page + dịch vụ + ad id ads + tài khoản quảng cáo`, gồm chi tiêu, mess, bình luận và số lượng số điện thoại.
-- Bảng 2 gom danh sách số điện thoại theo `ad id ads + tài khoản quảng cáo + page + dịch vụ`.
+- Bảng 1 lấy `ad id ads` làm key, gồm page, dịch vụ, tài khoản quảng cáo, chi tiêu, mess, bình luận và số lượng SĐT từ nguồn hiệu quả ads.
+- Bảng 2 lấy `SĐT + ad id ads + tài khoản quảng cáo + page + dịch vụ` làm key, hiển thị danh sách SĐT theo từng nguồn từ nguồn danh sách SĐT.
 
 ## Quản lý tài khoản thuê
 

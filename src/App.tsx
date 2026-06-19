@@ -77,11 +77,10 @@ type PhoneSortKey =
   | "adAccount"
   | "phoneList"
   | "page"
-  | "service"
-  | "phoneCount";
+  | "service";
 type TopMetric = "messages" | "leads" | "spend";
 
-interface AdRecord {
+interface PerformanceRecord {
   id: string;
   sourceRow: number;
   date: string;
@@ -92,10 +91,22 @@ interface AdRecord {
   spend: number;
   messages: number;
   comments: number;
-  phoneRaw: string;
-  phones: string[];
   phoneCount: number;
   adId: string;
+}
+
+interface PhoneRecord {
+  id: string;
+  sourceRow: number;
+  date: string;
+  dateLabel: string;
+  phoneRaw: string;
+  phone: string;
+  normalizedPhone: string;
+  adId: string;
+  adAccount: string;
+  page: string;
+  service: string;
   gender: string;
 }
 
@@ -140,10 +151,9 @@ interface PerformanceTableRow {
 
 interface PhoneTableRow {
   id: string;
+  phoneList: string;
   adId: string;
   adAccount: string;
-  phoneList: string;
-  phoneCount: number;
   page: string;
   service: string;
 }
@@ -181,7 +191,10 @@ interface AuthFormState {
   resetCode: string;
 }
 
-const CSV_URL = import.meta.env.VITE_SHEET_CSV_URL?.trim();
+const LEGACY_CSV_URL = import.meta.env.VITE_SHEET_CSV_URL?.trim();
+const PERFORMANCE_CSV_URL =
+  import.meta.env.VITE_PERFORMANCE_SHEET_CSV_URL?.trim() || LEGACY_CSV_URL || "";
+const PHONE_CSV_URL = import.meta.env.VITE_PHONE_SHEET_CSV_URL?.trim() || "";
 const ADMIN_EMAIL =
   import.meta.env.VITE_ADMIN_EMAIL?.trim() ||
   import.meta.env.VITE_ADMIN_USERNAME?.trim() ||
@@ -192,8 +205,12 @@ const ADMIN_PHONE = import.meta.env.VITE_ADMIN_PHONE?.trim() || "";
 const ADMIN_TELEGRAM = import.meta.env.VITE_ADMIN_TELEGRAM?.trim() || "";
 const ADMIN_ZALO = import.meta.env.VITE_ADMIN_ZALO?.trim() || "";
 const ADMIN_FACEBOOK = import.meta.env.VITE_ADMIN_FACEBOOK?.trim() || "";
-const SHEET_URL_STORAGE_KEY = "ads-dashboard-sheet-url";
-const SHEET_TEMPLATE_FILENAME = "mau-truong-du-lieu-google-sheet.csv";
+const LEGACY_SHEET_URL_STORAGE_KEY = "ads-dashboard-sheet-url";
+const PERFORMANCE_SHEET_URL_STORAGE_KEY =
+  "ads-dashboard-performance-sheet-url";
+const PHONE_SHEET_URL_STORAGE_KEY = "ads-dashboard-phone-sheet-url";
+const PERFORMANCE_TEMPLATE_FILENAME = "mau-nguon-hieu-qua-ads.tsv";
+const PHONE_TEMPLATE_FILENAME = "mau-nguon-danh-sach-sdt.tsv";
 const ACCOUNTS_STORAGE_KEY = "ads-dashboard-accounts";
 const CURRENT_ACCOUNT_STORAGE_KEY = "ads-dashboard-current-account-id";
 const FIRESTORE_ACCOUNTS_COLLECTION = "accounts";
@@ -267,21 +284,42 @@ const COLUMN_ALIASES = {
     "so dien thoai",
     "số điện thoại",
   ],
+  phoneCount: [
+    "phoneCount",
+    "phone count",
+    "lead",
+    "leads",
+    "so luong sdt",
+    "so luong so dien thoai",
+    "số lượng sđt",
+    "số lượng số điện thoại",
+  ],
   adId: ["adId", "ad id", "ad_id", "ads id", "id ads", "id quang cao"],
   gender: ["gender", "gioi tinh", "giới tính", "sex"],
 } as const;
 
-const SAMPLE_CSV = `ngày,page,tài khoản quảng cáo,dịch vụ,số tiền chi tiêu,số mess,bình luận,số điện thoại,ad id,giới tính
-01/06/2026,Page Hà Nội,TKQC 01,IVF,"1.250.000",34,12,0981234567,AD-1001,Nữ
-01/06/2026,Page Sài Gòn,TKQC 02,Nha khoa,"860,000",21,8,0912345678,AD-1002,Nam
-02/06/2026,Page Hà Nội,TKQC 01,IVF,"1,430,000",42,15,+84981234568,AD-1001,Nữ
-02/06/2026,Page Đà Nẵng,TKQC 03,Da liễu,540000,12,4,,AD-1003,Chưa rõ
-03/06/2026,Page Sài Gòn,TKQC 02,Nha khoa,"975.000",27,11,0901122334,AD-1004,Nữ
-04/06/2026,Page Hà Nội,TKQC 04,Da liễu,1120000,29,9,0934556677,AD-1005,Nam
-05/06/2026,Page Đà Nẵng,TKQC 03,IVF,"1.760.000",48,20,0977888999,AD-1006,Nữ
-06/06/2026,Page Hà Nội,TKQC 01,Nha khoa,690000,18,7,0888123456,AD-1007,Nam
-07/06/2026,Page Sài Gòn,TKQC 02,IVF,"2,120,000",55,24,0912345678,AD-1008,Nữ
-08/06/2026,Page Đà Nẵng,TKQC 03,Da liễu,730000,17,6,0845566778,AD-1003,Nữ`;
+const SAMPLE_PERFORMANCE_TSV = `date	adId	spend	messages	comments	phoneCount	adAccount	page	service
+01/06/2026	AD-1001	1250000	34	12	2	TKQC 01	Page Ha Noi	IVF
+01/06/2026	AD-1002	860000	21	8	1	TKQC 02	Page Sai Gon	Nha khoa
+02/06/2026	AD-1001	1430000	42	15	1	TKQC 01	Page Ha Noi	IVF
+02/06/2026	AD-1003	540000	12	4	0	TKQC 03	Page Da Nang	Da lieu
+03/06/2026	AD-1004	975000	27	11	1	TKQC 02	Page Sai Gon	Nha khoa
+04/06/2026	AD-1005	1120000	29	9	1	TKQC 04	Page Ha Noi	Da lieu
+05/06/2026	AD-1006	1760000	48	20	2	TKQC 03	Page Da Nang	IVF
+06/06/2026	AD-1007	690000	18	7	1	TKQC 01	Page Ha Noi	Nha khoa
+07/06/2026	AD-1008	2120000	55	24	1	TKQC 02	Page Sai Gon	IVF
+08/06/2026	AD-1003	730000	17	6	1	TKQC 03	Page Da Nang	Da lieu`;
+
+const SAMPLE_PHONE_TSV = `date	phone	adId	adAccount	page	service	gender
+01/06/2026	0981234567, 0981234568	AD-1001	TKQC 01	Page Ha Noi	IVF	Nu
+01/06/2026	0912345678	AD-1002	TKQC 02	Page Sai Gon	Nha khoa	Nam
+02/06/2026	+84981234568	AD-1001	TKQC 01	Page Ha Noi	IVF	Nu
+03/06/2026	0901122334	AD-1004	TKQC 02	Page Sai Gon	Nha khoa	Nu
+04/06/2026	0934556677	AD-1005	TKQC 04	Page Ha Noi	Da lieu	Nam
+05/06/2026	0977888999; 0977888998	AD-1006	TKQC 03	Page Da Nang	IVF	Nu
+06/06/2026	0888123456	AD-1007	TKQC 01	Page Ha Noi	Nha khoa	Nam
+07/06/2026	0912345678	AD-1008	TKQC 02	Page Sai Gon	IVF	Nu
+08/06/2026	0845566778	AD-1003	TKQC 03	Page Da Nang	Da lieu	Nu`;
 
 const moneyFormatter = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -317,9 +355,9 @@ const PERFORMANCE_TABLE_COLUMNS: Array<{
   label: string;
   align?: "right";
 }> = [
+  { key: "adId", label: "Ad ID Ads" },
   { key: "page", label: "Page" },
   { key: "service", label: "Dịch vụ" },
-  { key: "adId", label: "Ad ID Ads" },
   { key: "adAccount", label: "Tài khoản quảng cáo" },
   { key: "spend", label: "Số tiền chi tiêu", align: "right" },
   { key: "messages", label: "Mess", align: "right" },
@@ -332,17 +370,30 @@ const PHONE_TABLE_COLUMNS: Array<{
   label: string;
   align?: "right";
 }> = [
+  { key: "phoneList", label: "Danh sách SĐT" },
   { key: "adId", label: "Ad ID Ads" },
   { key: "adAccount", label: "Tài khoản quảng cáo" },
-  { key: "phoneList", label: "Danh sách SĐT" },
   { key: "page", label: "Page" },
   { key: "service", label: "Dịch vụ" },
 ];
 
 function App() {
-  const [records, setRecords] = useState<AdRecord[]>([]);
-  const [sheetUrlInput, setSheetUrlInput] = useState(readInitialSheetUrl);
-  const [activeSheetUrl, setActiveSheetUrl] = useState(readInitialSheetUrl);
+  const [performanceRecords, setPerformanceRecords] = useState<
+    PerformanceRecord[]
+  >([]);
+  const [phoneRecords, setPhoneRecords] = useState<PhoneRecord[]>([]);
+  const [performanceSheetUrlInput, setPerformanceSheetUrlInput] = useState(
+    readInitialPerformanceSheetUrl,
+  );
+  const [phoneSheetUrlInput, setPhoneSheetUrlInput] = useState(
+    readInitialPhoneSheetUrl,
+  );
+  const [activePerformanceSheetUrl, setActivePerformanceSheetUrl] = useState(
+    readInitialPerformanceSheetUrl,
+  );
+  const [activePhoneSheetUrl, setActivePhoneSheetUrl] = useState(
+    readInitialPhoneSheetUrl,
+  );
   const [accounts, setAccounts] = useState<AccountRecord[]>(() =>
     isFirebaseEnabled ? [] : readStoredAccounts(),
   );
@@ -359,12 +410,20 @@ function App() {
   const [accountMessage, setAccountMessage] = useState("");
   const [isAccountManagerOpen, setIsAccountManagerOpen] = useState(false);
   const [adminDurationDays, setAdminDurationDays] = useState(30);
-  const [loadState, setLoadState] = useState<LoadState>(() => {
-    const initialSheetUrl = readInitialSheetUrl();
+  const [performanceLoadState, setPerformanceLoadState] = useState<LoadState>(() => {
+    const initialSheetUrl = readInitialPerformanceSheetUrl();
     return {
       status: "loading",
       source: initialSheetUrl ? "sheet" : "sample",
-      message: "Đang tải dữ liệu",
+      message: "Dang tai nguon hieu qua ads",
+    };
+  });
+  const [phoneLoadState, setPhoneLoadState] = useState<LoadState>(() => {
+    const initialSheetUrl = readInitialPhoneSheetUrl();
+    return {
+      status: "loading",
+      source: initialSheetUrl ? "sheet" : "sample",
+      message: "Dang tai nguon danh sach SDT",
     };
   });
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
@@ -373,7 +432,7 @@ function App() {
     useState<PerformanceSortKey>("spend");
   const [performanceSortDirection, setPerformanceSortDirection] =
     useState<SortDirection>("desc");
-  const [phoneSortKey, setPhoneSortKey] = useState<PhoneSortKey>("adId");
+  const [phoneSortKey, setPhoneSortKey] = useState<PhoneSortKey>("phoneList");
   const [phoneSortDirection, setPhoneSortDirection] =
     useState<SortDirection>("asc");
   const [dimension, setDimension] = useState<DimensionKey>("page");
@@ -449,101 +508,172 @@ function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const sheetUrl = activeSheetUrl.trim();
+    const sheetUrl = activePerformanceSheetUrl.trim();
 
-    async function loadData() {
-      setLoadState({
+    async function loadPerformanceData() {
+      setPerformanceLoadState({
         status: "loading",
         source: sheetUrl ? "sheet" : "sample",
-        message: sheetUrl ? "Đang tải Google Sheet" : "Đang dùng dữ liệu mẫu",
+        message: sheetUrl
+          ? "Dang tai nguon hieu qua ads"
+          : "Dang dung mau nguon hieu qua ads",
       });
 
       try {
         const csv = sheetUrl
           ? await fetchCsv(resolveGoogleSheetCsvUrl(sheetUrl))
-          : SAMPLE_CSV;
-        const parsedRecords = parseCsvToRecords(csv);
+          : SAMPLE_PERFORMANCE_TSV;
+        const parsedRecords = parsePerformanceCsvToRecords(csv);
 
         if (!cancelled) {
-          setRecords(parsedRecords);
-          setLoadState({
+          setPerformanceRecords(parsedRecords);
+          setPerformanceLoadState({
             status: "ready",
             source: sheetUrl ? "sheet" : "sample",
             message: sheetUrl
-              ? `Đã tải ${numberFormatter.format(parsedRecords.length)} dòng`
-              : "Chưa có link Google Sheet, đang dùng dữ liệu mẫu",
+              ? `Nguon ads: ${numberFormatter.format(parsedRecords.length)} dong`
+              : "Nguon ads dang dung du lieu mau",
           });
         }
       } catch (error) {
         if (!cancelled) {
-          const fallback = parseCsvToRecords(SAMPLE_CSV);
-          setRecords(fallback);
-          setLoadState({
+          const fallback = parsePerformanceCsvToRecords(SAMPLE_PERFORMANCE_TSV);
+          setPerformanceRecords(fallback);
+          setPerformanceLoadState({
             status: "error",
             source: "sample",
             message:
               error instanceof Error
-                ? `Không tải được Google Sheet: ${error.message}`
-                : "Không tải được Google Sheet",
+                ? `Nguon ads loi: ${error.message}`
+                : "Nguon ads khong tai duoc",
           });
         }
       }
     }
 
-    loadData();
+    loadPerformanceData();
 
     return () => {
       cancelled = true;
     };
-  }, [activeSheetUrl, refreshTick]);
+  }, [activePerformanceSheetUrl, refreshTick]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sheetUrl = activePhoneSheetUrl.trim();
+
+    async function loadPhoneData() {
+      setPhoneLoadState({
+        status: "loading",
+        source: sheetUrl ? "sheet" : "sample",
+        message: sheetUrl
+          ? "Dang tai nguon danh sach SDT"
+          : "Dang dung mau nguon danh sach SDT",
+      });
+
+      try {
+        const csv = sheetUrl
+          ? await fetchCsv(resolveGoogleSheetCsvUrl(sheetUrl))
+          : SAMPLE_PHONE_TSV;
+        const parsedRecords = parsePhoneCsvToRecords(csv);
+
+        if (!cancelled) {
+          setPhoneRecords(parsedRecords);
+          setPhoneLoadState({
+            status: "ready",
+            source: sheetUrl ? "sheet" : "sample",
+            message: sheetUrl
+              ? `Nguon SDT: ${numberFormatter.format(parsedRecords.length)} dong`
+              : "Nguon SDT dang dung du lieu mau",
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const fallback = parsePhoneCsvToRecords(SAMPLE_PHONE_TSV);
+          setPhoneRecords(fallback);
+          setPhoneLoadState({
+            status: "error",
+            source: "sample",
+            message:
+              error instanceof Error
+                ? `Nguon SDT loi: ${error.message}`
+                : "Nguon SDT khong tai duoc",
+          });
+        }
+      }
+    }
+
+    loadPhoneData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activePhoneSheetUrl, refreshTick]);
 
   const filterOptions = useMemo(
     () => ({
-      pages: uniqueSorted(records.map((record) => record.page)),
-      adAccounts: uniqueSorted(records.map((record) => record.adAccount)),
-      services: uniqueSorted(records.map((record) => record.service)),
-      genders: uniqueSorted(records.map((record) => record.gender)),
-      adIds: uniqueSorted(records.map((record) => record.adId)),
+      pages: uniqueSorted([
+        ...performanceRecords.map((record) => record.page),
+        ...phoneRecords.map((record) => record.page),
+      ]),
+      adAccounts: uniqueSorted([
+        ...performanceRecords.map((record) => record.adAccount),
+        ...phoneRecords.map((record) => record.adAccount),
+      ]),
+      services: uniqueSorted([
+        ...performanceRecords.map((record) => record.service),
+        ...phoneRecords.map((record) => record.service),
+      ]),
+      genders: uniqueSorted(phoneRecords.map((record) => record.gender)),
+      adIds: uniqueSorted([
+        ...performanceRecords.map((record) => record.adId),
+        ...phoneRecords.map((record) => record.adId),
+      ]),
     }),
-    [records],
+    [performanceRecords, phoneRecords],
   );
 
-  const filteredRecords = useMemo(
-    () => records.filter((record) => matchesFilters(record, filters)),
-    [records, filters],
+  const filteredPerformanceRecords = useMemo(
+    () =>
+      performanceRecords.filter((record) =>
+        matchesPerformanceFilters(record, filters),
+      ),
+    [performanceRecords, filters],
+  );
+
+  const filteredPhoneRecords = useMemo(
+    () => phoneRecords.filter((record) => matchesPhoneFilters(record, filters)),
+    [phoneRecords, filters],
   );
 
   const summary = useMemo(
-    () => summarizeRecords(filteredRecords),
-    [filteredRecords],
+    () => summarizeRecords(filteredPerformanceRecords, filteredPhoneRecords),
+    [filteredPerformanceRecords, filteredPhoneRecords],
   );
 
   const trendData = useMemo(
-    () => buildTrendData(filteredRecords),
-    [filteredRecords],
+    () => buildTrendData(filteredPerformanceRecords),
+    [filteredPerformanceRecords],
   );
 
   const groupedData = useMemo(
-    () => buildGroupedData(filteredRecords, dimension),
-    [filteredRecords, dimension],
+    () => buildGroupedData(filteredPerformanceRecords, dimension),
+    [filteredPerformanceRecords, dimension],
   );
 
   const genderData = useMemo(
-    () => buildGroupedData(filteredRecords, "gender").map((item) => ({
-      name: item.name,
-      value: item.leads,
-    })),
-    [filteredRecords],
+    () => buildGenderData(filteredPhoneRecords),
+    [filteredPhoneRecords],
   );
 
   const topAdsData = useMemo(
-    () => buildGroupedData(filteredRecords, "adId", 10, topMetric),
-    [filteredRecords, topMetric],
+    () => buildGroupedData(filteredPerformanceRecords, "adId", 10, topMetric),
+    [filteredPerformanceRecords, topMetric],
   );
 
   const performanceRows = useMemo(() => {
     const normalizedSearch = normalizeSearch(searchTerm);
-    const rows = buildPerformanceRows(filteredRecords);
+    const rows = buildPerformanceRows(filteredPerformanceRecords);
     const searchedRows = normalizedSearch
       ? rows.filter((row) =>
           normalizeSearch(performanceRowToSearchText(row)).includes(
@@ -561,7 +691,7 @@ function App() {
       ),
     );
   }, [
-    filteredRecords,
+    filteredPerformanceRecords,
     performanceSortDirection,
     performanceSortKey,
     searchTerm,
@@ -569,7 +699,7 @@ function App() {
 
   const phoneRows = useMemo(() => {
     const normalizedSearch = normalizeSearch(searchTerm);
-    const rows = buildPhoneRows(filteredRecords);
+    const rows = buildPhoneRows(filteredPhoneRecords);
     const searchedRows = normalizedSearch
       ? rows.filter((row) =>
           normalizeSearch(phoneRowToSearchText(row)).includes(normalizedSearch),
@@ -579,7 +709,7 @@ function App() {
     return [...searchedRows].sort((a, b) =>
       compareTableRows(a, b, phoneSortKey, phoneSortDirection),
     );
-  }, [filteredRecords, phoneSortDirection, phoneSortKey, searchTerm]);
+  }, [filteredPhoneRecords, phoneSortDirection, phoneSortKey, searchTerm]);
 
   const currentAccount = useMemo(
     () => accounts.find((account) => account.id === currentAccountId) ?? null,
@@ -647,31 +777,48 @@ function App() {
     setSearchTerm("");
   }
 
-  function applySheetUrl() {
-    const nextUrl = sheetUrlInput.trim();
-    const resolvedUrl = nextUrl || CSV_URL || "";
+  function applySheetUrls() {
+    const nextPerformanceUrl = performanceSheetUrlInput.trim();
+    const nextPhoneUrl = phoneSheetUrlInput.trim();
+    const resolvedPerformanceUrl = nextPerformanceUrl || PERFORMANCE_CSV_URL;
+    const resolvedPhoneUrl = nextPhoneUrl || PHONE_CSV_URL;
 
     if (typeof window !== "undefined") {
-      if (nextUrl) {
-        window.localStorage.setItem(SHEET_URL_STORAGE_KEY, nextUrl);
+      if (nextPerformanceUrl) {
+        window.localStorage.setItem(
+          PERFORMANCE_SHEET_URL_STORAGE_KEY,
+          nextPerformanceUrl,
+        );
       } else {
-        window.localStorage.removeItem(SHEET_URL_STORAGE_KEY);
+        window.localStorage.removeItem(PERFORMANCE_SHEET_URL_STORAGE_KEY);
+      }
+
+      if (nextPhoneUrl) {
+        window.localStorage.setItem(PHONE_SHEET_URL_STORAGE_KEY, nextPhoneUrl);
+      } else {
+        window.localStorage.removeItem(PHONE_SHEET_URL_STORAGE_KEY);
       }
     }
 
-    setSheetUrlInput(resolvedUrl);
-    setActiveSheetUrl(resolvedUrl);
+    setPerformanceSheetUrlInput(resolvedPerformanceUrl);
+    setPhoneSheetUrlInput(resolvedPhoneUrl);
+    setActivePerformanceSheetUrl(resolvedPerformanceUrl);
+    setActivePhoneSheetUrl(resolvedPhoneUrl);
     setRefreshTick((current) => current + 1);
   }
 
   function handleSheetUrlKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") {
-      applySheetUrl();
+      applySheetUrls();
     }
   }
 
-  function downloadSheetTemplate() {
-    downloadCsv(SHEET_TEMPLATE_FILENAME, SAMPLE_CSV);
+  function downloadPerformanceTemplate() {
+    downloadText(PERFORMANCE_TEMPLATE_FILENAME, SAMPLE_PERFORMANCE_TSV);
+  }
+
+  function downloadPhoneTemplate() {
+    downloadText(PHONE_TEMPLATE_FILENAME, SAMPLE_PHONE_TSV);
   }
 
   async function loginAccount() {
@@ -1119,15 +1266,15 @@ function App() {
     }
 
     setPhoneSortKey(key);
-    setPhoneSortDirection(key === "phoneCount" ? "desc" : "asc");
+    setPhoneSortDirection("asc");
   }
 
   function exportPerformanceRows() {
     const csv = Papa.unparse(
       performanceRows.map((row) => ({
+        adId: row.adId,
         page: row.page,
         service: row.service,
-        adId: row.adId,
         adAccount: row.adAccount,
         spend: row.spend,
         messages: row.messages,
@@ -1144,9 +1291,9 @@ function App() {
   function exportPhoneRows() {
     const csv = Papa.unparse(
       phoneRows.map((row) => ({
+        phoneList: row.phoneList,
         adId: row.adId,
         adAccount: row.adAccount,
-        phoneList: row.phoneList,
         page: row.page,
         service: row.service,
       })),
@@ -1182,8 +1329,11 @@ function App() {
               Còn {getAccountDaysLeft(currentAccount)} ngày
             </span>
           )}
-          <span className={`status-pill status-${loadState.status}`}>
-            {loadState.message}
+          <span className={`status-pill status-${performanceLoadState.status}`}>
+            {performanceLoadState.message}
+          </span>
+          <span className={`status-pill status-${phoneLoadState.status}`}>
+            {phoneLoadState.message}
           </span>
           {isAdminAccount && (
             <button
@@ -1270,11 +1420,23 @@ function App() {
         <>
       <section className="source-config" aria-label="Cấu hình nguồn dữ liệu">
         <label className="sheet-url-field">
-          Link Google Sheet CSV
+          Link nguồn hiệu quả ads
           <input
             type="url"
-            value={sheetUrlInput}
-            onChange={(event) => setSheetUrlInput(event.target.value)}
+            value={performanceSheetUrlInput}
+            onChange={(event) =>
+              setPerformanceSheetUrlInput(event.target.value)
+            }
+            onKeyDown={handleSheetUrlKeyDown}
+            placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv&gid=0"
+          />
+        </label>
+        <label className="sheet-url-field">
+          Link nguồn danh sách SĐT
+          <input
+            type="url"
+            value={phoneSheetUrlInput}
+            onChange={(event) => setPhoneSheetUrlInput(event.target.value)}
             onKeyDown={handleSheetUrlKeyDown}
             placeholder="https://docs.google.com/spreadsheets/d/.../export?format=csv&gid=0"
           />
@@ -1283,7 +1445,7 @@ function App() {
           className="icon-button"
           type="button"
           title="Áp dụng link Google Sheet"
-          onClick={applySheetUrl}
+          onClick={applySheetUrls}
         >
           <LinkIcon size={17} />
           <span>Áp dụng link</span>
@@ -1291,11 +1453,20 @@ function App() {
         <button
           className="ghost-button"
           type="button"
-          title="Tải mẫu trường dữ liệu"
-          onClick={downloadSheetTemplate}
+          title="Tải mẫu nguồn hiệu quả ads"
+          onClick={downloadPerformanceTemplate}
         >
           <FileDown size={17} />
-          <span>Tải mẫu trường</span>
+          <span>Mẫu ads</span>
+        </button>
+        <button
+          className="ghost-button"
+          type="button"
+          title="Tải mẫu nguồn danh sách SĐT"
+          onClick={downloadPhoneTemplate}
+        >
+          <FileDown size={17} />
+          <span>Mẫu SĐT</span>
         </button>
       </section>
 
@@ -1362,9 +1533,15 @@ function App() {
         </button>
       </section>
 
-      {loadState.status === "error" && (
+      {performanceLoadState.status === "error" && (
         <div className="error-banner" role="alert">
-          {loadState.message}. Dashboard vẫn hiển thị dữ liệu mẫu để kiểm tra giao diện.
+          {performanceLoadState.message}. Nguon ads dang hien thi du lieu mau.
+        </div>
+      )}
+
+      {phoneLoadState.status === "error" && (
+        <div className="error-banner" role="alert">
+          {phoneLoadState.message}. Nguon SDT dang hien thi du lieu mau.
         </div>
       )}
 
@@ -1395,7 +1572,7 @@ function App() {
         <section className="chart-grid" aria-label="Biểu đồ thống kê">
           <ChartPanel
             title="Xu hướng theo ngày"
-            subtitle={`${formatNumber(filteredRecords.length)} dòng sau lọc`}
+            subtitle={`${formatNumber(filteredPerformanceRecords.length)} dong nguon ads sau loc`}
           >
             <ResponsiveContainer width="100%" height={320}>
               <ComposedChart data={trendData} margin={CHART_MARGIN}>
@@ -1575,7 +1752,7 @@ function App() {
               </div>
               <p>
                 {formatNumber(performanceRows.length)} nhóm từ{" "}
-                {formatNumber(filteredRecords.length)} dòng sau lọc
+                {formatNumber(filteredPerformanceRecords.length)} dong nguon ads sau loc
               </p>
             </div>
             <div className="table-actions">
@@ -1631,9 +1808,9 @@ function App() {
                 {performanceRows.length > 0 ? (
                   performanceRows.map((row) => (
                     <tr key={row.id}>
+                      <td>{row.adId}</td>
                       <td>{row.page}</td>
                       <td>{row.service}</td>
-                      <td>{row.adId}</td>
                       <td>{row.adAccount}</td>
                       <td className="right">{formatMoney(row.spend)}</td>
                       <td className="right">{formatNumber(row.messages)}</td>
@@ -1709,9 +1886,9 @@ function App() {
                 {phoneRows.length > 0 ? (
                   phoneRows.map((row) => (
                     <tr key={row.id}>
+                      <td className="phone-list-cell">{row.phoneList}</td>
                       <td>{row.adId}</td>
                       <td>{row.adAccount}</td>
-                      <td className="phone-list-cell">{row.phoneList}</td>
                       <td>{row.page}</td>
                       <td>{row.service}</td>
                     </tr>
@@ -2370,10 +2547,20 @@ function SegmentedControl({
   );
 }
 
-function readInitialSheetUrl() {
-  if (typeof window === "undefined") return CSV_URL || "";
+function readInitialPerformanceSheetUrl() {
+  if (typeof window === "undefined") return PERFORMANCE_CSV_URL;
   return (
-    window.localStorage.getItem(SHEET_URL_STORAGE_KEY)?.trim() || CSV_URL || ""
+    window.localStorage.getItem(PERFORMANCE_SHEET_URL_STORAGE_KEY)?.trim() ||
+    window.localStorage.getItem(LEGACY_SHEET_URL_STORAGE_KEY)?.trim() ||
+    PERFORMANCE_CSV_URL
+  );
+}
+
+function readInitialPhoneSheetUrl() {
+  if (typeof window === "undefined") return PHONE_CSV_URL;
+  return (
+    window.localStorage.getItem(PHONE_SHEET_URL_STORAGE_KEY)?.trim() ||
+    PHONE_CSV_URL
   );
 }
 
@@ -2552,14 +2739,18 @@ function saveCurrentAccountId(accountId: string) {
   }
 }
 
-function downloadCsv(filename: string, csv: string) {
-  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
+function downloadText(filename: string, content: string, type = "text/plain") {
+  const blob = new Blob([`\uFEFF${content}`], { type: `${type};charset=utf-8;` });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function downloadCsv(filename: string, csv: string) {
+  downloadText(filename, csv, "text/csv");
 }
 
 function addDays(date: Date, days: number) {
@@ -2693,27 +2884,41 @@ function resolveGoogleSheetCsvUrl(url: string) {
   return url;
 }
 
-function parseCsvToRecords(csv: string) {
+function parseDelimitedRows(csv: string) {
   const parsed = Papa.parse<Record<string, string>>(csv, {
     header: true,
     skipEmptyLines: "greedy",
     transformHeader: (header) => header.trim(),
   });
 
-  return parsed.data
-    .filter((row) => Object.values(row).some((value) => String(value ?? "").trim()))
-    .map((row, index) => normalizeRecord(row, index));
+  return parsed.data.filter((row) =>
+    Object.values(row).some((value) => String(value ?? "").trim()),
+  );
 }
 
-function normalizeRecord(row: Record<string, string>, index: number): AdRecord {
+function parsePerformanceCsvToRecords(csv: string) {
+  return parseDelimitedRows(csv).map((row, index) =>
+    normalizePerformanceRecord(row, index),
+  );
+}
+
+function parsePhoneCsvToRecords(csv: string) {
+  return parseDelimitedRows(csv).flatMap((row, index) =>
+    normalizePhoneRecords(row, index),
+  );
+}
+
+function normalizePerformanceRecord(
+  row: Record<string, string>,
+  index: number,
+): PerformanceRecord {
   const read = (field: keyof typeof COLUMN_ALIASES) =>
     readAliasedValue(row, COLUMN_ALIASES[field]);
-  const phoneRaw = read("phone");
-  const phones = extractPhones(phoneRaw);
   const parsedDate = parseDateValue(read("date"));
+  const adId = cleanLabel(read("adId"), "Chưa xác định");
 
   return {
-    id: `${index}-${read("adId") || read("phone") || "row"}`,
+    id: `performance-${index}-${adId}`,
     sourceRow: index + 2,
     date: parsedDate.key,
     dateLabel: parsedDate.label,
@@ -2723,12 +2928,37 @@ function normalizeRecord(row: Record<string, string>, index: number): AdRecord {
     spend: parseNumber(read("spend")),
     messages: parseNumber(read("messages")),
     comments: parseNumber(read("comments")),
-    phoneRaw,
-    phones,
-    phoneCount: phones.length || (phoneRaw.trim() ? 1 : 0),
-    adId: cleanLabel(read("adId"), "Chưa xác định"),
-    gender: normalizeGender(read("gender")),
+    phoneCount: parseNumber(read("phoneCount")),
+    adId,
   };
+}
+
+function normalizePhoneRecords(
+  row: Record<string, string>,
+  index: number,
+): PhoneRecord[] {
+  const read = (field: keyof typeof COLUMN_ALIASES) =>
+    readAliasedValue(row, COLUMN_ALIASES[field]);
+  const phoneRaw = read("phone");
+  const parsedDate = parseDateValue(read("date"));
+  const phones = splitPhoneValues(phoneRaw);
+  const displayPhones =
+    phones.length > 0 ? phones : phoneRaw.trim() ? [phoneRaw] : [];
+
+  return displayPhones.map((phone, phoneIndex) => ({
+    id: `phone-${index}-${phoneIndex}-${normalizeSearch(phone)}`,
+    sourceRow: index + 2,
+    date: parsedDate.key,
+    dateLabel: parsedDate.label,
+    phoneRaw,
+    phone,
+    normalizedPhone: normalizePhone(phone),
+    adId: cleanLabel(read("adId"), "Chưa xác định"),
+    adAccount: cleanLabel(read("adAccount"), "Chưa xác định"),
+    page: cleanLabel(read("page"), "Chưa xác định"),
+    service: cleanLabel(read("service"), "Chưa xác định"),
+    gender: normalizeGender(read("gender")),
+  }));
 }
 
 function readAliasedValue(
@@ -2865,6 +3095,16 @@ function extractPhones(value: string) {
   return Array.from(new Set(phones));
 }
 
+function splitPhoneValues(value: string) {
+  const normalizedPhones = extractPhones(value);
+  if (normalizedPhones.length > 0) return normalizedPhones;
+
+  return value
+    .split(/[,;\n|]+/g)
+    .map((phone) => phone.trim())
+    .filter(Boolean);
+}
+
 function normalizePhone(value: string) {
   let digits = value.replace(/\D/g, "");
   if (digits.startsWith("0084")) digits = `0${digits.slice(4)}`;
@@ -2874,7 +3114,10 @@ function normalizePhone(value: string) {
   return "";
 }
 
-function matchesFilters(record: AdRecord, filters: Filters) {
+function matchesBaseFilters(
+  record: Pick<PerformanceRecord | PhoneRecord, "date" | "page" | "adAccount" | "service" | "adId">,
+  filters: Filters,
+) {
   if (filters.startDate && (!record.date || record.date < filters.startDate)) {
     return false;
   }
@@ -2884,21 +3127,31 @@ function matchesFilters(record: AdRecord, filters: Filters) {
   if (filters.page && record.page !== filters.page) return false;
   if (filters.adAccount && record.adAccount !== filters.adAccount) return false;
   if (filters.service && record.service !== filters.service) return false;
-  if (filters.gender && record.gender !== filters.gender) return false;
   if (filters.adId && record.adId !== filters.adId) return false;
   return true;
 }
 
-function summarizeRecords(records: AdRecord[]): MetricSummary {
+function matchesPerformanceFilters(record: PerformanceRecord, filters: Filters) {
+  return matchesBaseFilters(record, filters);
+}
+
+function matchesPhoneFilters(record: PhoneRecord, filters: Filters) {
+  if (!matchesBaseFilters(record, filters)) return false;
+  if (filters.gender && record.gender !== filters.gender) return false;
+  return true;
+}
+
+function summarizeRecords(
+  performanceRecords: PerformanceRecord[],
+  phoneRecords: PhoneRecord[],
+): MetricSummary {
   const phoneSet = new Set<string>();
-  const summary = records.reduce(
+  const summary = performanceRecords.reduce(
     (current, record) => {
-      record.phones.forEach((phone) => phoneSet.add(phone));
       current.spend += record.spend;
       current.messages += record.messages;
       current.comments += record.comments;
       current.leads += record.phoneCount;
-      current.validPhones += record.phones.length;
       return current;
     },
     {
@@ -2913,13 +3166,19 @@ function summarizeRecords(records: AdRecord[]): MetricSummary {
     },
   );
 
+  phoneRecords.forEach((record) => {
+    if (!record.normalizedPhone) return;
+    phoneSet.add(record.normalizedPhone);
+    summary.validPhones += 1;
+  });
+
   summary.uniquePhones = phoneSet.size;
   summary.costPerMessage = summary.messages ? summary.spend / summary.messages : 0;
   summary.costPerLead = summary.leads ? summary.spend / summary.leads : 0;
   return summary;
 }
 
-function buildTrendData(records: AdRecord[]) {
+function buildTrendData(records: PerformanceRecord[]) {
   const groups = new Map<string, MetricSummary & { label: string }>();
 
   records.forEach((record) => {
@@ -2952,8 +3211,8 @@ function buildTrendData(records: AdRecord[]) {
 }
 
 function buildGroupedData(
-  records: AdRecord[],
-  key: DimensionKey | "gender" | "adId",
+  records: PerformanceRecord[],
+  key: DimensionKey | "adId",
   limit = 8,
   sortBy: TopMetric = "spend",
 ) {
@@ -2979,7 +3238,6 @@ function buildGroupedData(
     current.messages += record.messages;
     current.comments += record.comments;
     current.leads += record.phoneCount;
-    current.validPhones += record.phones.length;
     groups.set(groupName, current);
   });
 
@@ -2988,36 +3246,58 @@ function buildGroupedData(
     .slice(0, limit);
 }
 
+function buildGenderData(records: PhoneRecord[]) {
+  const groups = new Map<string, { name: string; value: number }>();
+
+  records.forEach((record) => {
+    const groupName = record.gender || "Chưa rõ";
+    const current = groups.get(groupName) ?? { name: groupName, value: 0 };
+    current.value += 1;
+    groups.set(groupName, current);
+  });
+
+  return Array.from(groups.values()).sort((a, b) => b.value - a.value);
+}
+
 function uniqueSorted(values: string[]) {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) =>
     a.localeCompare(b, "vi"),
   );
 }
 
-function buildPerformanceRows(records: AdRecord[]): PerformanceTableRow[] {
-  const groups = new Map<string, PerformanceTableRow>();
+function buildPerformanceRows(records: PerformanceRecord[]): PerformanceTableRow[] {
+  const groups = new Map<
+    string,
+    Omit<PerformanceTableRow, "page" | "service" | "adAccount"> & {
+      pages: Set<string>;
+      services: Set<string>;
+      adAccounts: Set<string>;
+    }
+  >();
 
   records.forEach((record) => {
-    const id = makeGroupId(
-      record.page,
-      record.service,
-      record.adId,
-      record.adAccount,
-    );
+    const id = makeGroupId(record.adId);
     const current =
       groups.get(id) ??
       ({
         id,
-        page: record.page,
-        service: record.service,
         adId: record.adId,
-        adAccount: record.adAccount,
+        pages: new Set<string>(),
+        services: new Set<string>(),
+        adAccounts: new Set<string>(),
         spend: 0,
         messages: 0,
         comments: 0,
         phoneCount: 0,
-      } satisfies PerformanceTableRow);
+      } satisfies Omit<PerformanceTableRow, "page" | "service" | "adAccount"> & {
+        pages: Set<string>;
+        services: Set<string>;
+        adAccounts: Set<string>;
+      });
 
+    current.pages.add(record.page);
+    current.services.add(record.service);
+    current.adAccounts.add(record.adAccount);
     current.spend += record.spend;
     current.messages += record.messages;
     current.comments += record.comments;
@@ -3025,20 +3305,27 @@ function buildPerformanceRows(records: AdRecord[]): PerformanceTableRow[] {
     groups.set(id, current);
   });
 
-  return Array.from(groups.values());
+  return Array.from(groups.values()).map((row) => ({
+    id: row.id,
+    adId: row.adId,
+    page: joinUniqueSet(row.pages),
+    service: joinUniqueSet(row.services),
+    adAccount: joinUniqueSet(row.adAccounts),
+    spend: row.spend,
+    messages: row.messages,
+    comments: row.comments,
+    phoneCount: row.phoneCount,
+  }));
 }
 
-function buildPhoneRows(records: AdRecord[]): PhoneTableRow[] {
-  const groups = new Map<
-    string,
-    Omit<PhoneTableRow, "phoneList"> & { phones: Set<string> }
-  >();
+function buildPhoneRows(records: PhoneRecord[]): PhoneTableRow[] {
+  const groups = new Map<string, PhoneTableRow>();
 
   records.forEach((record) => {
-    const phones = getDisplayPhones(record);
-    if (phones.length === 0) return;
+    if (!record.phone) return;
 
     const id = makeGroupId(
+      record.normalizedPhone || record.phone,
       record.adId,
       record.adAccount,
       record.page,
@@ -3048,34 +3335,21 @@ function buildPhoneRows(records: AdRecord[]): PhoneTableRow[] {
       groups.get(id) ??
       ({
         id,
+        phoneList: record.phone,
         adId: record.adId,
         adAccount: record.adAccount,
-        phoneCount: 0,
         page: record.page,
         service: record.service,
-        phones: new Set<string>(),
-      } satisfies Omit<PhoneTableRow, "phoneList"> & { phones: Set<string> });
+      } satisfies PhoneTableRow);
 
-    phones.forEach((phone) => current.phones.add(phone));
-    current.phoneCount += record.phoneCount;
     groups.set(id, current);
   });
 
-  return Array.from(groups.values()).map((row) => ({
-    id: row.id,
-    adId: row.adId,
-    adAccount: row.adAccount,
-    phoneList: Array.from(row.phones).join(", "),
-    phoneCount: row.phoneCount,
-    page: row.page,
-    service: row.service,
-  }));
+  return Array.from(groups.values());
 }
 
-function getDisplayPhones(record: AdRecord) {
-  if (record.phones.length > 0) return record.phones;
-  const rawPhone = record.phoneRaw.trim();
-  return rawPhone ? [rawPhone] : [];
+function joinUniqueSet(values: Set<string>) {
+  return Array.from(values).filter(Boolean).join(", ");
 }
 
 function makeGroupId(...parts: string[]) {
@@ -3101,9 +3375,9 @@ function compareTableRows<T extends object, K extends keyof T>(
 
 function performanceRowToSearchText(row: PerformanceTableRow) {
   return [
+    row.adId,
     row.page,
     row.service,
-    row.adId,
     row.adAccount,
     row.spend,
     row.messages,
@@ -3114,12 +3388,11 @@ function performanceRowToSearchText(row: PerformanceTableRow) {
 
 function phoneRowToSearchText(row: PhoneTableRow) {
   return [
+    row.phoneList,
     row.adId,
     row.adAccount,
-    row.phoneList,
     row.page,
     row.service,
-    row.phoneCount,
   ].join(" ");
 }
 

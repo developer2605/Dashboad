@@ -25,10 +25,18 @@ Mở địa chỉ app in ra trên terminal, thường là `http://127.0.0.1:5173
 
 Sheet của khách không cần ẩn, nhưng phải publish hoặc chia sẻ public để trình duyệt đọc được CSV.
 
-Cột dữ liệu nên dùng:
+Cần chuẩn bị 2 nguồn Google Sheet public CSV.
+
+Nguồn hiệu quả ads nên có các cột:
 
 ```csv
-date,page,adAccount,service,spend,messages,comments,phone,adId,gender
+date,adId,spend,messages,comments,phoneCount,adAccount,page,service
+```
+
+Nguồn danh sách SĐT nên có các cột:
+
+```csv
+date,phone,adId,adAccount,page,service,gender
 ```
 
 Cách lấy link CSV thường dùng:
@@ -37,7 +45,7 @@ Cách lấy link CSV thường dùng:
 https://docs.google.com/spreadsheets/d/SHEET_ID/export?format=csv&gid=0
 ```
 
-Trong app có ô `Link Google Sheet CSV`, user có thể đổi link trực tiếp trên giao diện. Link nhập trong giao diện được lưu trên trình duyệt và ưu tiên hơn link trong `.env`.
+Trong app có 2 ô link: `Link nguồn hiệu quả ads` và `Link nguồn danh sách SĐT`. Link nhập trong giao diện được lưu trên trình duyệt và ưu tiên hơn link trong `.env`.
 
 ## 3. Deploy lên Vercel
 
@@ -60,6 +68,8 @@ Tạo các biến này trên Vercel hoặc trong file `.env` khi chạy local:
 
 ```env
 VITE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/export?format=csv&gid=0
+VITE_PERFORMANCE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_PERFORMANCE_SHEET_ID/export?format=csv&gid=0
+VITE_PHONE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_PHONE_SHEET_ID/export?format=csv&gid=0
 VITE_ADMIN_EMAIL=admin@gmail.com
 VITE_ADMIN_PHONE=0900000000
 VITE_ADMIN_TELEGRAM=your_telegram_username

@@ -52,9 +52,10 @@ Nếu app đang chạy chế độ local demo, app sẽ hiển thị mã đặt 
 
 Khi đã vào dashboard:
 
-1. Dán link CSV Google Sheet vào ô `Link Google Sheet CSV`.
-2. Bấm nút áp dụng link.
-3. App sẽ tải dữ liệu từ Sheet và cập nhật bảng/biểu đồ.
+1. Dán link CSV nguồn hiệu quả ads vào ô `Link nguồn hiệu quả ads`.
+2. Dán link CSV nguồn danh sách SĐT vào ô `Link nguồn danh sách SĐT`.
+3. Bấm nút áp dụng link.
+4. App sẽ tải 2 nguồn dữ liệu và cập nhật bảng/biểu đồ.
 
 Link CSV thường có dạng:
 
@@ -64,22 +65,31 @@ https://docs.google.com/spreadsheets/d/SHEET_ID/export?format=csv&gid=0
 
 ## 6. Tải mẫu trường dữ liệu
 
-Bấm `Tải mẫu trường` để tải file CSV mẫu. Sheet nên có các cột:
+Bấm `Mẫu ads` để tải file TSV mẫu cho nguồn hiệu quả ads. Sheet nên có các cột:
 
-```csv
-date,page,adAccount,service,spend,messages,comments,phone,adId,gender
+```tsv
+date	adId	spend	messages	comments	phoneCount	adAccount	page	service
 ```
 
-App cũng nhận một số tên cột tiếng Việt phổ biến như `ngày`, `tài khoản quảng cáo`, `dịch vụ`, `chi tiêu`, `mess`, `bình luận`, `sđt`, `ad id`, `giới tính`.
+Bấm `Mẫu SĐT` để tải file TSV mẫu cho nguồn danh sách SĐT. Sheet nên có các cột:
+
+```tsv
+date	phone	adId	adAccount	page	service	gender
+```
+
+TSV dùng tab để mở/import vào Google Sheet hoặc Excel không bị gộp vào một cột.
+
+App cũng nhận một số tên cột tiếng Việt phổ biến như `ngày`, `tài khoản quảng cáo`, `dịch vụ`, `chi tiêu`, `mess`, `bình luận`, `sđt`, `số lượng sđt`, `ad id`, `giới tính`.
 
 ## 7. Xem dữ liệu
 
 Dashboard có:
 
-- KPI tổng quan: chi tiêu, mess, bình luận, lead, số điện thoại hợp lệ và duy nhất.
-- Biểu đồ xu hướng theo ngày.
-- Biểu đồ so sánh theo page, tài khoản quảng cáo, dịch vụ, giới tính và ad id.
-- Bảng 1 tổng hợp theo page, dịch vụ, ad id ads, tài khoản quảng cáo.
-- Bảng 2 danh sách số điện thoại theo ad id ads, tài khoản quảng cáo, page và dịch vụ.
+- KPI tổng quan: chi tiêu, mess, bình luận, lead từ nguồn hiệu quả ads; SĐT hợp lệ và duy nhất từ nguồn danh sách SĐT.
+- Biểu đồ xu hướng theo ngày từ nguồn hiệu quả ads.
+- Biểu đồ so sánh theo page, tài khoản quảng cáo, dịch vụ và ad id từ nguồn hiệu quả ads.
+- Biểu đồ giới tính từ nguồn danh sách SĐT.
+- Bảng 1 tổng hợp theo ad id ads.
+- Bảng 2 danh sách số điện thoại theo từng SĐT + ad id ads + tài khoản quảng cáo + page + dịch vụ.
 
 Có thể dùng bộ lọc phía trên để lọc theo ngày, page, tài khoản quảng cáo, dịch vụ, giới tính và ad id.
