@@ -61,32 +61,37 @@ Tạo các biến này trên Vercel hoặc trong file `.env` khi chạy local:
 ```env
 VITE_SHEET_CSV_URL=https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID/export?format=csv&gid=0
 VITE_ADMIN_EMAIL=admin@gmail.com
-VITE_ADMIN_PASSWORD=doi-mat-khau-nay
 VITE_ADMIN_PHONE=0900000000
 VITE_ADMIN_TELEGRAM=your_telegram_username
 VITE_ADMIN_ZALO=0900000000
 VITE_ADMIN_FACEBOOK=https://facebook.com/your.profile
+VITE_FIREBASE_API_KEY=your_firebase_api_key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
+VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
+VITE_FIREBASE_APP_ID=1:123456789:web:abcdef123456
 ```
 
-Lưu ý quan trọng: biến bắt đầu bằng `VITE_` sẽ được đóng gói vào mã chạy trên trình duyệt. Vì vậy bản quản lý tài khoản hiện tại phù hợp để demo, thử nghiệm, hoặc dùng nội bộ đơn giản. Nếu cho thuê online thật, không nên xem `VITE_ADMIN_PASSWORD` là bí mật.
+Lưu ý: biến bắt đầu bằng `VITE_` sẽ được đóng gói vào mã chạy trên trình duyệt. Firebase web config không phải mật khẩu bí mật; bảo mật thật nằm ở Firebase Authentication và Firestore Rules.
 
 ## 5. Giới hạn của bản hiện tại
 
-Bản hiện tại lưu tài khoản, trạng thái kích hoạt, thời hạn dùng và mã quên mật khẩu trong `localStorage` của trình duyệt. Điều này có nghĩa là:
+Nếu chưa cấu hình Firebase, app tự chạy fallback local demo và lưu tài khoản trong `localStorage`. Chế độ này chỉ phù hợp để thử giao diện.
 
-- Dữ liệu tài khoản không tự đồng bộ giữa nhiều máy.
-- Admin và user không dùng chung một cơ sở dữ liệu thật.
-- Xác thực Gmail và quên mật khẩu là luồng demo, chưa gửi email thật.
-- Người dùng có kiến thức kỹ thuật có thể can thiệp dữ liệu phía trình duyệt.
+Khi đã cấu hình Firebase:
+
+- Đăng ký, đăng nhập, xác thực Gmail và quên mật khẩu dùng Firebase Auth.
+- Danh sách tài khoản, trạng thái kích hoạt và thời hạn dùng lưu trong Firestore.
+- Admin có thể quản lý tài khoản từ mọi máy.
+- Cần publish Firestore Rules đúng như hướng dẫn trong [FIREBASE.md](FIREBASE.md).
 
 ## 6. Khuyến nghị khi cho thuê thật
 
-Khi bán hoặc cho thuê cho nhiều khách, nên nâng cấp thêm backend:
-
-- Dùng Firebase Authentication hoặc Supabase Auth để đăng ký Gmail, xác thực email và quên mật khẩu bằng email thật.
-- Dùng Firestore, Supabase Database hoặc một backend riêng để lưu tài khoản, vai trò admin, ngày hết hạn và trạng thái kích hoạt.
-- Chỉ backend mới được quyền quyết định tài khoản còn hạn hay hết hạn.
-- Admin dashboard gọi API/backend để kích hoạt, khóa hoặc gia hạn user.
+- Bắt buộc dùng Firebase mode, không dùng local demo.
+- Không để Firestore ở test mode.
+- Thay `YOUR_ADMIN_GMAIL` trong `firestore.rules` bằng Gmail admin thật.
+- Nếu muốn xóa luôn tài khoản Firebase Auth từ màn admin, cần bổ sung Cloud Functions hoặc Admin SDK.
 
 ## 7. Nguồn tham khảo
 

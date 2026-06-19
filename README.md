@@ -3,6 +3,7 @@
 ## Tài liệu hướng dẫn
 
 - [Hướng dẫn đưa app online](docs/ONLINE.md)
+- [Hướng dẫn Firebase giai đoạn 2](docs/FIREBASE.md)
 - [Hướng dẫn quản trị](docs/ADMIN.md)
 - [Hướng dẫn người dùng](docs/USER.md)
 
@@ -62,7 +63,7 @@ Tài khoản admin mặc định lấy từ `.env`. Nếu chưa cấu hình, app
 
 Khu quản lý tài khoản chia thành `Chờ xác thực Gmail`, `Chờ admin kích hoạt`, `Đang hoạt động`, và `Hết hạn`. Có thể bấm `Xuất tài khoản` để tải CSV quản lý.
 
-Lưu ý: bản hiện tại lưu tài khoản và thời hạn trong `localStorage`, phù hợp demo hoặc quản lý thủ công trên một máy. Nếu cho thuê online nhiều khách và cần xác thực Gmail thật, đồng bộ/chống can thiệp, cần nối backend như Supabase hoặc Firebase.
+Lưu ý: nếu cấu hình Firebase, tài khoản và thời hạn được đồng bộ bằng Firebase Auth + Firestore để admin quản lý ở mọi nơi. Nếu chưa cấu hình Firebase, app tự chạy chế độ local demo bằng `localStorage`.
 
 ## Chạy app
 

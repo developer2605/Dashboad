@@ -8,8 +8,8 @@ Tài liệu này dành cho khách hàng sử dụng dashboard.
 2. Bấm `Tạo tài khoản khách`.
 3. Nhập tên hiển thị, Gmail và mật khẩu.
 4. Bấm `Đăng ký Gmail`.
-5. App hiển thị mã xác thực Gmail demo.
-6. Nhập mã xác thực để hoàn tất xác thực Gmail.
+5. Nếu app đã bật Firebase, mở Gmail và bấm link xác thực email.
+6. Quay lại app, bấm nút kiểm tra xác thực Gmail.
 
 Sau khi xác thực, tài khoản vẫn cần admin kích hoạt trước khi dùng dashboard.
 
@@ -42,11 +42,11 @@ Nếu quên mật khẩu:
 
 1. Tại màn đăng nhập, bấm `Quên mật khẩu`.
 2. Nhập Gmail đã đăng ký.
-3. Bấm `Gửi mã đặt lại`.
-4. App hiển thị mã đặt lại mật khẩu demo.
-5. Nhập Gmail, mật khẩu mới và mã đặt lại.
-6. Bấm `Đặt lại mật khẩu`.
-7. Đăng nhập lại bằng mật khẩu mới.
+3. Nếu app đã bật Firebase, bấm gửi email đặt lại mật khẩu.
+4. Mở Gmail và làm theo link trong email.
+5. Đăng nhập lại bằng mật khẩu mới.
+
+Nếu app đang chạy chế độ local demo, app sẽ hiển thị mã đặt lại để nhập thủ công trên màn hình.
 
 ## 5. Nhập link Google Sheet
 

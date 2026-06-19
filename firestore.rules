@@ -1,0 +1,56 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrapAdminEmail() {
+      return isSignedIn() && request.auth.token.email == "hungallinone.pd@gmail.com";
+    }
+
+    function currentAccountPath() {
+      return /databases/$(database)/documents/accounts/$(request.auth.uid);
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        (isBootstrapAdminEmail() || get(currentAccountPath()).data.role == "admin");
+    }
+
+    match /accounts/{userId} {
+      allow create: if isOwner(userId)
+        && request.resource.data.email == request.auth.token.email
+        && (
+          (isBootstrapAdminEmail() && request.resource.data.role == "admin")
+          || (!isBootstrapAdminEmail() && request.resource.data.role == "user")
+        );
+
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+
+      allow update: if isAdmin()
+        || (
+          isOwner(userId)
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            "displayName",
+            "emailVerifiedAt",
+            "updatedAt"
+          ])
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

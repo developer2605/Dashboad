@@ -4,20 +4,15 @@ Tài liệu này dành cho tài khoản quản trị viên của dashboard.
 
 ## 1. Đăng nhập admin
 
-Tài khoản admin lấy từ biến môi trường:
+Khi đã bật Firebase, tài khoản admin là tài khoản Firebase Auth có Gmail trùng:
 
 ```env
 VITE_ADMIN_EMAIL=admin@gmail.com
-VITE_ADMIN_PASSWORD=doi-mat-khau-nay
 ```
 
-Nếu chưa cấu hình, app dùng tài khoản demo:
+Gmail này cũng phải được thay vào `YOUR_ADMIN_GMAIL` trong file `firestore.rules` trước khi publish rules.
 
-```text
-admin@gmail.com / admin123
-```
-
-Khi đưa app online, cần đổi email và mật khẩu demo trước khi build.
+Nếu chưa cấu hình Firebase, app chạy chế độ local demo và dùng `VITE_ADMIN_PASSWORD` hoặc `admin123` để thử giao diện.
 
 ## 2. Mở khu quản lý tài khoản
 
@@ -63,14 +58,14 @@ Xóa tài khoản:
 
 ## 5. Quên mật khẩu
 
-User tự lấy lại mật khẩu trên màn đăng nhập:
+Khi đã bật Firebase, user tự lấy lại mật khẩu bằng email thật:
 
 1. Bấm `Quên mật khẩu`.
 2. Nhập Gmail đã đăng ký.
-3. App tạo mã đặt lại mật khẩu demo.
-4. User nhập mã đó cùng mật khẩu mới.
+3. Firebase gửi email đặt lại mật khẩu.
+4. User mở Gmail và làm theo link trong email.
 
-Với bản hiện tại, admin không cần tạo mã kích hoạt riêng cho user. Nếu triển khai backend thật, nên dùng chức năng gửi email đặt lại mật khẩu của Firebase/Supabase để user nhận link qua Gmail.
+Nếu chưa cấu hình Firebase, app dùng luồng mã đặt lại demo trên trình duyệt.
 
 ## 6. Xuất danh sách tài khoản
 
@@ -93,4 +88,4 @@ Có thể bỏ trống biến không dùng.
 
 ## 8. Lưu ý bảo mật
 
-Bản hiện tại là frontend/demo, lưu tài khoản trong `localStorage`. Nếu cho thuê thật cho nhiều khách, cần backend để admin và user dùng chung dữ liệu, xác thực Gmail thật, gửi quên mật khẩu thật và tránh việc user tự sửa trạng thái tài khoản trong trình duyệt.
+Bản online cần chạy bằng Firebase Auth + Firestore Rules. Không để Firestore ở test mode. Nút xóa trong app xóa hồ sơ Firestore; muốn xóa luôn tài khoản Auth cần Cloud Functions hoặc Firebase Admin SDK.

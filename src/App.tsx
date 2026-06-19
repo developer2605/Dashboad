@@ -1,5 +1,26 @@
 import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import Papa from "papaparse";
+import { FirebaseError } from "firebase/app";
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  reload,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  type User,
+} from "firebase/auth";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+  type DocumentData,
+} from "firebase/firestore";
 import {
   ArrowDown,
   ArrowUp,
@@ -38,6 +59,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { firebaseServices, isFirebaseEnabled } from "./firebaseClient";
 
 type DimensionKey = "page" | "adAccount" | "service";
 type SortDirection = "asc" | "desc";
@@ -138,7 +160,7 @@ type AuthMode = "login" | "register" | "forgot" | "reset";
 interface AccountRecord {
   id: string;
   email: string;
-  password: string;
+  password?: string;
   displayName: string;
   role: AccountRole;
   createdAt: string;
@@ -174,6 +196,7 @@ const SHEET_URL_STORAGE_KEY = "ads-dashboard-sheet-url";
 const SHEET_TEMPLATE_FILENAME = "mau-truong-du-lieu-google-sheet.csv";
 const ACCOUNTS_STORAGE_KEY = "ads-dashboard-accounts";
 const CURRENT_ACCOUNT_STORAGE_KEY = "ads-dashboard-current-account-id";
+const FIRESTORE_ACCOUNTS_COLLECTION = "accounts";
 
 const DEFAULT_AUTH_FORM: AuthFormState = {
   email: "",
@@ -320,10 +343,16 @@ function App() {
   const [records, setRecords] = useState<AdRecord[]>([]);
   const [sheetUrlInput, setSheetUrlInput] = useState(readInitialSheetUrl);
   const [activeSheetUrl, setActiveSheetUrl] = useState(readInitialSheetUrl);
-  const [accounts, setAccounts] = useState<AccountRecord[]>(readStoredAccounts);
-  const [currentAccountId, setCurrentAccountId] = useState(
-    readCurrentAccountId,
+  const [accounts, setAccounts] = useState<AccountRecord[]>(() =>
+    isFirebaseEnabled ? [] : readStoredAccounts(),
   );
+  const [currentAccountId, setCurrentAccountId] = useState(() =>
+    isFirebaseEnabled ? "" : readCurrentAccountId(),
+  );
+  const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(!isFirebaseEnabled);
+  const [isAccountSyncReady, setIsAccountSyncReady] =
+    useState(!isFirebaseEnabled);
   const [authForm, setAuthForm] = useState<AuthFormState>(DEFAULT_AUTH_FORM);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authMessage, setAuthMessage] = useState("");
@@ -352,8 +381,71 @@ function App() {
   const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
-    saveStoredAccounts(accounts);
+    if (!isFirebaseEnabled) {
+      saveStoredAccounts(accounts);
+    }
   }, [accounts]);
+
+  useEffect(() => {
+    if (!firebaseServices) return;
+
+    return onAuthStateChanged(firebaseServices.auth, (user) => {
+      setFirebaseUser(user);
+      setCurrentAccountId(user?.uid ?? "");
+      setIsAuthReady(true);
+      setIsAccountSyncReady(!user);
+      if (!user) {
+        setAccounts([]);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!firebaseServices) return;
+
+    if (!firebaseUser) {
+      setAccounts([]);
+      setIsAccountSyncReady(true);
+      return;
+    }
+
+    setIsAccountSyncReady(false);
+    const accountRef = doc(
+      firebaseServices.db,
+      FIRESTORE_ACCOUNTS_COLLECTION,
+      firebaseUser.uid,
+    );
+
+    return onSnapshot(
+      accountRef,
+      (snapshot) => {
+        if (!snapshot.exists()) {
+          void createOrUpdateFirebaseAccountProfile(firebaseUser);
+          return;
+        }
+
+        const account = accountFromFirestoreDoc(
+          snapshot.id,
+          snapshot.data(),
+        );
+
+        if (firebaseUser.emailVerified && !account.emailVerifiedAt) {
+          void updateDoc(accountRef, {
+            emailVerifiedAt: new Date().toISOString(),
+          });
+          return;
+        }
+
+        setAccounts((current) => mergeAccountRecord(current, account));
+        setCurrentAccountId(firebaseUser.uid);
+        setIsAccountSyncReady(true);
+      },
+      (error) => {
+        setAccountMessage(firebaseErrorToMessage(error));
+        setIsAccountSyncReady(true);
+      },
+    );
+  }, [firebaseUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -500,6 +592,26 @@ function App() {
     ? getAccountState(currentAccount)
     : null;
 
+  useEffect(() => {
+    if (!firebaseServices || !firebaseUser || currentAccount?.role !== "admin") {
+      return;
+    }
+
+    return onSnapshot(
+      collection(firebaseServices.db, FIRESTORE_ACCOUNTS_COLLECTION),
+      (snapshot) => {
+        const syncedAccounts = snapshot.docs.map((accountDoc) =>
+          accountFromFirestoreDoc(accountDoc.id, accountDoc.data()),
+        );
+        setAccounts(syncedAccounts);
+        setIsAccountSyncReady(true);
+      },
+      (error) => {
+        setAccountMessage(firebaseErrorToMessage(error));
+      },
+    );
+  }, [currentAccount?.role, firebaseUser]);
+
   const pendingEmailAccounts = useMemo(
     () =>
       accounts.filter((account) => getAccountState(account) === "pending_email"),
@@ -523,6 +635,8 @@ function App() {
   );
 
   const hasActiveFilters = Object.values(filters).some(Boolean);
+  const isAuthLoading =
+    isFirebaseEnabled && (!isAuthReady || (Boolean(firebaseUser) && !isAccountSyncReady));
 
   function updateFilter(key: keyof Filters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -560,7 +674,7 @@ function App() {
     downloadCsv(SHEET_TEMPLATE_FILENAME, SAMPLE_CSV);
   }
 
-  function loginAccount() {
+  async function loginAccount() {
     const email = normalizeEmail(authForm.email);
     const password = authForm.password;
     const account = accounts.find(
@@ -569,6 +683,19 @@ function App() {
 
     if (!email || !password) {
       setAuthMessage("Vui lòng nhập Gmail và mật khẩu.");
+      return;
+    }
+
+    if (firebaseServices) {
+      try {
+        setAuthMessage("Dang dang nhap...");
+        await signInWithEmailAndPassword(firebaseServices.auth, email, password);
+        setAuthForm(DEFAULT_AUTH_FORM);
+        setAuthMessage("");
+        setAccountMessage("");
+      } catch (error) {
+        setAuthMessage(firebaseErrorToMessage(error));
+      }
       return;
     }
 
@@ -584,7 +711,7 @@ function App() {
     setAccountMessage("");
   }
 
-  function registerAccount() {
+  async function registerAccount() {
     const email = normalizeEmail(authForm.email);
     const password = authForm.password.trim();
     const displayName = authForm.displayName.trim() || email;
@@ -599,8 +726,37 @@ function App() {
       return;
     }
 
-    if (password.length < 4) {
+    if (password.length < (firebaseServices ? 6 : 4)) {
+      if (firebaseServices) {
+        setAuthMessage("Mat khau nen co it nhat 6 ky tu.");
+        return;
+      }
       setAuthMessage("Mật khẩu nên có ít nhất 4 ký tự.");
+      return;
+    }
+
+    if (firebaseServices) {
+      try {
+        setAuthMessage("Dang tao tai khoan Firebase...");
+        const credential = await createUserWithEmailAndPassword(
+          firebaseServices.auth,
+          email,
+          password,
+        );
+        await updateProfile(credential.user, { displayName });
+        await createOrUpdateFirebaseAccountProfile(
+          credential.user,
+          displayName,
+        );
+        await sendEmailVerification(credential.user);
+        setAuthForm({ ...DEFAULT_AUTH_FORM, email });
+        setAuthMessage("");
+        setAccountMessage(
+          "Da tao tai khoan va gui email xac thuc. Hay mo Gmail, bam link xac thuc roi quay lai app.",
+        );
+      } catch (error) {
+        setAuthMessage(firebaseErrorToMessage(error));
+      }
       return;
     }
 
@@ -632,7 +788,7 @@ function App() {
     );
   }
 
-  function requestPasswordReset() {
+  async function requestPasswordReset() {
     const email = normalizeEmail(authForm.email);
     const account = accounts.find(
       (item) => normalizeEmail(item.email) === email,
@@ -640,6 +796,20 @@ function App() {
 
     if (!email) {
       setAuthMessage("Vui lòng nhập Gmail cần lấy lại mật khẩu.");
+      return;
+    }
+
+    if (firebaseServices) {
+      try {
+        await sendPasswordResetEmail(firebaseServices.auth, email);
+        setAuthForm({ ...DEFAULT_AUTH_FORM, email });
+        setAuthMode("login");
+        setAuthMessage(
+          "Da gui email dat lai mat khau. Hay mo Gmail va lam theo huong dan.",
+        );
+      } catch (error) {
+        setAuthMessage(firebaseErrorToMessage(error));
+      }
       return;
     }
 
@@ -705,15 +875,55 @@ function App() {
     setAuthMessage("Đã đặt lại mật khẩu. Vui lòng đăng nhập lại.");
   }
 
-  function logoutAccount() {
+  async function logoutAccount() {
+    if (firebaseServices) {
+      await signOut(firebaseServices.auth);
+      setFirebaseUser(null);
+      setCurrentAccountId("");
+      setAccounts([]);
+      setAuthForm(DEFAULT_AUTH_FORM);
+      setAccountMessage("Da dang xuat tai khoan.");
+      return;
+    }
+
     saveCurrentAccountId("");
     setCurrentAccountId("");
     setAuthForm(DEFAULT_AUTH_FORM);
     setAccountMessage("Đã đăng xuất tài khoản.");
   }
 
-  function verifyCurrentAccountEmail() {
+  async function verifyCurrentAccountEmail() {
     if (!currentAccount) return;
+
+    if (firebaseServices && firebaseUser) {
+      try {
+        await reload(firebaseUser);
+        if (!firebaseUser.emailVerified) {
+          setAccountMessage(
+            "Chua thay Gmail duoc xac thuc. Hay bam link trong email roi thu lai.",
+          );
+          return;
+        }
+
+        await updateDoc(
+          doc(
+            firebaseServices.db,
+            FIRESTORE_ACCOUNTS_COLLECTION,
+            firebaseUser.uid,
+          ),
+          {
+            emailVerifiedAt: new Date().toISOString(),
+          },
+        );
+        setAccountMessage(
+          "Gmail da xac thuc. Vui long lien he admin de kich hoat tai khoan.",
+        );
+      } catch (error) {
+        setAccountMessage(firebaseErrorToMessage(error));
+      }
+      return;
+    }
+
     const code = authForm.verificationCode.trim();
 
     if (!code) {
@@ -742,9 +952,56 @@ function App() {
     );
   }
 
-  function activateOrExtendAccount(accountId: string) {
+  async function resendVerificationEmail() {
+    if (firebaseServices && firebaseUser) {
+      try {
+        await sendEmailVerification(firebaseUser);
+        setAccountMessage("Da gui lai email xac thuc Gmail.");
+      } catch (error) {
+        setAccountMessage(firebaseErrorToMessage(error));
+      }
+      return;
+    }
+
+    if (currentAccount?.verificationCode) {
+      setAccountMessage(
+        `Ma xac thuc demo cua Gmail nay la ${currentAccount.verificationCode}.`,
+      );
+    }
+  }
+
+  async function activateOrExtendAccount(accountId: string) {
     const days = clampInteger(adminDurationDays, 1, 3650);
     const now = new Date();
+    const targetAccount = accounts.find((account) => account.id === accountId);
+
+    if (firebaseServices) {
+      if (!targetAccount || targetAccount.role === "admin") return;
+      if (!targetAccount.emailVerifiedAt) {
+        setAccountMessage("Tai khoan can xac thuc Gmail truoc khi kich hoat.");
+        return;
+      }
+
+      const currentExpiry = targetAccount.expiresAt
+        ? new Date(targetAccount.expiresAt)
+        : now;
+      const baseDate =
+        currentExpiry.getTime() > now.getTime() ? currentExpiry : now;
+
+      try {
+        await updateDoc(
+          doc(firebaseServices.db, FIRESTORE_ACCOUNTS_COLLECTION, accountId),
+          {
+            activatedAt: targetAccount.activatedAt ?? now.toISOString(),
+            expiresAt: addDays(baseDate, days).toISOString(),
+          },
+        );
+        setAccountMessage(`Da kich hoat/gia han ${formatNumber(days)} ngay.`);
+      } catch (error) {
+        setAccountMessage(firebaseErrorToMessage(error));
+      }
+      return;
+    }
 
     setAccounts((current) =>
       current.map((account) => {
@@ -771,9 +1028,23 @@ function App() {
     setAccountMessage(`Đã kích hoạt/gia hạn ${formatNumber(days)} ngày.`);
   }
 
-  function expireAccount(accountId: string) {
+  async function expireAccount(accountId: string) {
     const confirmed = window.confirm("Dừng quyền truy cập của tài khoản này?");
     if (!confirmed) return;
+
+    if (firebaseServices) {
+      try {
+        await updateDoc(
+          doc(firebaseServices.db, FIRESTORE_ACCOUNTS_COLLECTION, accountId),
+          {
+            expiresAt: new Date().toISOString(),
+          },
+        );
+      } catch (error) {
+        setAccountMessage(firebaseErrorToMessage(error));
+      }
+      return;
+    }
 
     setAccounts((current) =>
       current.map((account) =>
@@ -784,11 +1055,22 @@ function App() {
     );
   }
 
-  function removeAccount(accountId: string) {
+  async function removeAccount(accountId: string) {
     const account = accounts.find((item) => item.id === accountId);
     if (!account || account.role === "admin") return;
     const confirmed = window.confirm(`Xóa tài khoản ${account.email}?`);
     if (!confirmed) return;
+
+    if (firebaseServices) {
+      try {
+        await deleteDoc(
+          doc(firebaseServices.db, FIRESTORE_ACCOUNTS_COLLECTION, accountId),
+        );
+      } catch (error) {
+        setAccountMessage(firebaseErrorToMessage(error));
+      }
+      return;
+    }
 
     setAccounts((current) => current.filter((item) => item.id !== accountId));
     if (currentAccountId === accountId) {
@@ -953,11 +1235,14 @@ function App() {
         />
       )}
 
-      {!currentAccount ? (
+      {isAuthLoading ? (
+        <AuthLoadingGate />
+      ) : !currentAccount ? (
         <AuthGate
           authForm={authForm}
           authMessage={authMessage}
           authMode={authMode}
+          isFirebaseMode={isFirebaseEnabled}
           setAuthForm={setAuthForm}
           setAuthMode={setAuthMode}
           loginAccount={loginAccount}
@@ -972,6 +1257,8 @@ function App() {
           accountMessage={accountMessage}
           setAuthForm={setAuthForm}
           verifyCurrentAccountEmail={verifyCurrentAccountEmail}
+          resendVerificationEmail={resendVerificationEmail}
+          isFirebaseMode={isFirebaseEnabled}
         />
       ) : !isAdminAccount && currentAccountState !== "active" ? (
         <PendingActivationGate
@@ -1449,10 +1736,31 @@ function App() {
 
 const CHART_MARGIN = { top: 12, right: 24, bottom: 8, left: 8 };
 
+function AuthLoadingGate() {
+  return (
+    <main className="license-main">
+      <section className="license-gate">
+        <div className="license-gate-copy">
+          <p className="eyebrow">Dang dong bo</p>
+          <h2>Dang tai tai khoan</h2>
+          <p>App dang ket noi Firebase va dong bo trang thai kich hoat.</p>
+        </div>
+        <div className="license-card">
+          <div className="license-icon">
+            <RefreshCw size={28} />
+          </div>
+          <p className="license-message">Vui long cho trong giay lat.</p>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 function AuthGate({
   authForm,
   authMessage,
   authMode,
+  isFirebaseMode,
   setAuthForm,
   setAuthMode,
   loginAccount,
@@ -1463,12 +1771,13 @@ function AuthGate({
   authForm: AuthFormState;
   authMessage: string;
   authMode: AuthMode;
+  isFirebaseMode: boolean;
   setAuthForm: (value: AuthFormState) => void;
   setAuthMode: (value: AuthMode) => void;
-  loginAccount: () => void;
-  registerAccount: () => void;
-  requestPasswordReset: () => void;
-  resetPassword: () => void;
+  loginAccount: () => void | Promise<void>;
+  registerAccount: () => void | Promise<void>;
+  requestPasswordReset: () => void | Promise<void>;
+  resetPassword: () => void | Promise<void>;
 }) {
   const isRegister = authMode === "register";
   const isForgot = authMode === "forgot";
@@ -1494,6 +1803,8 @@ function AuthGate({
       : isRegister
         ? registerAccount
         : loginAccount;
+  const resolvedPrimaryLabel =
+    isForgot && isFirebaseMode ? "Gui email dat lai" : primaryLabel;
 
   function updateForm<K extends keyof AuthFormState>(
     key: K,
@@ -1575,7 +1886,7 @@ function AuthGate({
             onClick={primaryAction}
           >
             {isRegister ? <UserPlus size={18} /> : <ShieldCheck size={18} />}
-            <span>{primaryLabel}</span>
+            <span>{resolvedPrimaryLabel}</span>
           </button>
           <div className="auth-link-row">
             <button
@@ -1617,12 +1928,16 @@ function EmailVerificationGate({
   accountMessage,
   setAuthForm,
   verifyCurrentAccountEmail,
+  resendVerificationEmail,
+  isFirebaseMode,
 }: {
   currentAccount: AccountRecord;
   authForm: AuthFormState;
   accountMessage: string;
   setAuthForm: (value: AuthFormState) => void;
-  verifyCurrentAccountEmail: () => void;
+  verifyCurrentAccountEmail: () => void | Promise<void>;
+  resendVerificationEmail: () => void | Promise<void>;
+  isFirebaseMode: boolean;
 }) {
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
     if (event.key === "Enter") verifyCurrentAccountEmail();
@@ -1643,6 +1958,7 @@ function EmailVerificationGate({
           <div className="license-icon">
             <MailCheck size={28} />
           </div>
+          {!isFirebaseMode && (
           <label>
             Mã xác thực Gmail
             <input
@@ -1658,6 +1974,7 @@ function EmailVerificationGate({
               placeholder="Nhập mã xác thực"
             />
           </label>
+          )}
           <button
             className="icon-button primary-button"
             type="button"
@@ -1666,6 +1983,16 @@ function EmailVerificationGate({
             <CheckCircle2 size={18} />
             <span>Xác thực Gmail</span>
           </button>
+          {isFirebaseMode && (
+            <button
+              className="icon-button"
+              type="button"
+              onClick={resendVerificationEmail}
+            >
+              <MailCheck size={18} />
+              <span>Gui lai email xac thuc</span>
+            </button>
+          )}
           {accountMessage && <p className="license-message">{accountMessage}</p>}
         </div>
       </section>
@@ -1754,9 +2081,9 @@ function AccountManager({
   activeAccounts: AccountRecord[];
   expiredAccounts: AccountRecord[];
   setAdminDurationDays: (value: number) => void;
-  activateOrExtendAccount: (accountId: string) => void;
-  expireAccount: (accountId: string) => void;
-  removeAccount: (accountId: string) => void;
+  activateOrExtendAccount: (accountId: string) => void | Promise<void>;
+  expireAccount: (accountId: string) => void | Promise<void>;
+  removeAccount: (accountId: string) => void | Promise<void>;
   exportAccounts: () => void;
 }) {
   const totalAccounts =
@@ -1785,7 +2112,8 @@ function AccountManager({
 
       {accountMessage && <div className="license-notice">{accountMessage}</div>}
 
-      {(ADMIN_EMAIL === "admin@gmail.com" || ADMIN_PASSWORD === "admin123") && (
+      {!isFirebaseEnabled &&
+        (ADMIN_EMAIL === "admin@gmail.com" || ADMIN_PASSWORD === "admin123") && (
         <div className="warning-banner">
           Đang dùng tài khoản admin mặc định. Khi đưa app lên online, hãy đặt
           <strong> VITE_ADMIN_EMAIL</strong> và{" "}
@@ -1874,9 +2202,9 @@ function AccountTable({
   title: string;
   rows: AccountRecord[];
   emptyText: string;
-  activateOrExtendAccount: (accountId: string) => void;
-  expireAccount: (accountId: string) => void;
-  removeAccount: (accountId: string) => void;
+  activateOrExtendAccount: (accountId: string) => void | Promise<void>;
+  expireAccount: (accountId: string) => void | Promise<void>;
+  removeAccount: (accountId: string) => void | Promise<void>;
 }) {
   return (
     <div className="license-table-block">
@@ -2047,6 +2375,92 @@ function readInitialSheetUrl() {
   return (
     window.localStorage.getItem(SHEET_URL_STORAGE_KEY)?.trim() || CSV_URL || ""
   );
+}
+
+function accountFromFirestoreDoc(id: string, data: DocumentData): AccountRecord {
+  return {
+    id,
+    email: normalizeEmail(readString(data.email)),
+    displayName: readString(data.displayName) || readString(data.email),
+    role: data.role === "admin" ? "admin" : "user",
+    createdAt: readString(data.createdAt) || new Date().toISOString(),
+    emailVerifiedAt: readOptionalString(data.emailVerifiedAt),
+    activatedAt: readOptionalString(data.activatedAt),
+    expiresAt: readOptionalString(data.expiresAt),
+    note: readOptionalString(data.note),
+  };
+}
+
+function mergeAccountRecord(
+  accounts: AccountRecord[],
+  nextAccount: AccountRecord,
+) {
+  const existingIndex = accounts.findIndex(
+    (account) => account.id === nextAccount.id,
+  );
+  if (existingIndex === -1) return [nextAccount, ...accounts];
+
+  return accounts.map((account, index) =>
+    index === existingIndex ? nextAccount : account,
+  );
+}
+
+async function createOrUpdateFirebaseAccountProfile(
+  user: User,
+  displayNameOverride?: string,
+) {
+  if (!firebaseServices || !user.email) return;
+
+  const now = new Date().toISOString();
+  const email = normalizeEmail(user.email);
+  const isAdminEmail = email === normalizeEmail(ADMIN_EMAIL);
+  const accountRef = doc(
+    firebaseServices.db,
+    FIRESTORE_ACCOUNTS_COLLECTION,
+    user.uid,
+  );
+
+  await setDoc(
+    accountRef,
+    {
+      email,
+      displayName:
+        displayNameOverride?.trim() || user.displayName || user.email || email,
+      role: isAdminEmail ? "admin" : "user",
+      createdAt: now,
+      emailVerifiedAt: user.emailVerified ? now : null,
+      updatedAt: now,
+    },
+    { merge: true },
+  );
+}
+
+function readString(value: unknown) {
+  return typeof value === "string" ? value : "";
+}
+
+function readOptionalString(value: unknown) {
+  const stringValue = readString(value);
+  return stringValue || undefined;
+}
+
+function firebaseErrorToMessage(error: unknown) {
+  if (error instanceof FirebaseError) {
+    const messages: Record<string, string> = {
+      "auth/email-already-in-use": "Gmail nay da duoc dang ky.",
+      "auth/invalid-email": "Dia chi Gmail khong hop le.",
+      "auth/invalid-credential": "Gmail hoac mat khau khong dung.",
+      "auth/user-not-found": "Khong tim thay tai khoan voi Gmail nay.",
+      "auth/wrong-password": "Mat khau khong dung.",
+      "auth/weak-password": "Mat khau qua yeu, nen co it nhat 6 ky tu.",
+      "permission-denied":
+        "Firebase tu choi quyen truy cap. Hay kiem tra Firestore Rules va quyen admin.",
+    };
+
+    return messages[error.code] || error.message;
+  }
+
+  return error instanceof Error ? error.message : "Co loi Firebase xay ra.";
 }
 
 function readStoredAccounts(): AccountRecord[] {
