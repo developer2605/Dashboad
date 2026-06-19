@@ -4,14 +4,24 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  CheckCircle2,
   Download,
   FileDown,
   FilterX,
   Link as LinkIcon,
+  Lock,
+  LogOut,
+  MailCheck,
+  MessageCircle,
+  Plus,
   RefreshCw,
   Search,
+  ShieldCheck,
   SlidersHorizontal,
   Table2,
+  Trash2,
+  UserCog,
+  UserPlus,
 } from "lucide-react";
 import {
   Area,
@@ -116,9 +126,62 @@ interface PhoneTableRow {
   service: string;
 }
 
+type AccountRole = "admin" | "user";
+type AccountState =
+  | "admin"
+  | "pending_email"
+  | "pending_admin"
+  | "active"
+  | "expired";
+type AuthMode = "login" | "register" | "forgot" | "reset";
+
+interface AccountRecord {
+  id: string;
+  email: string;
+  password: string;
+  displayName: string;
+  role: AccountRole;
+  createdAt: string;
+  emailVerifiedAt?: string;
+  verificationCode?: string;
+  passwordResetCode?: string;
+  passwordResetRequestedAt?: string;
+  activatedAt?: string;
+  expiresAt?: string;
+  note?: string;
+}
+
+interface AuthFormState {
+  email: string;
+  password: string;
+  displayName: string;
+  verificationCode: string;
+  resetCode: string;
+}
+
 const CSV_URL = import.meta.env.VITE_SHEET_CSV_URL?.trim();
+const ADMIN_EMAIL =
+  import.meta.env.VITE_ADMIN_EMAIL?.trim() ||
+  import.meta.env.VITE_ADMIN_USERNAME?.trim() ||
+  "admin@gmail.com";
+const ADMIN_PASSWORD =
+  import.meta.env.VITE_ADMIN_PASSWORD?.trim() || "admin123";
+const ADMIN_PHONE = import.meta.env.VITE_ADMIN_PHONE?.trim() || "";
+const ADMIN_TELEGRAM = import.meta.env.VITE_ADMIN_TELEGRAM?.trim() || "";
+const ADMIN_ZALO = import.meta.env.VITE_ADMIN_ZALO?.trim() || "";
+const ADMIN_FACEBOOK = import.meta.env.VITE_ADMIN_FACEBOOK?.trim() || "";
 const SHEET_URL_STORAGE_KEY = "ads-dashboard-sheet-url";
 const SHEET_TEMPLATE_FILENAME = "mau-truong-du-lieu-google-sheet.csv";
+const ACCOUNTS_STORAGE_KEY = "ads-dashboard-accounts";
+const CURRENT_ACCOUNT_STORAGE_KEY = "ads-dashboard-current-account-id";
+
+const DEFAULT_AUTH_FORM: AuthFormState = {
+  email: "",
+  password: "",
+  displayName: "",
+  verificationCode: "",
+  resetCode: "",
+};
 
 const EMPTY_FILTERS: Filters = {
   startDate: "",
@@ -257,6 +320,16 @@ function App() {
   const [records, setRecords] = useState<AdRecord[]>([]);
   const [sheetUrlInput, setSheetUrlInput] = useState(readInitialSheetUrl);
   const [activeSheetUrl, setActiveSheetUrl] = useState(readInitialSheetUrl);
+  const [accounts, setAccounts] = useState<AccountRecord[]>(readStoredAccounts);
+  const [currentAccountId, setCurrentAccountId] = useState(
+    readCurrentAccountId,
+  );
+  const [authForm, setAuthForm] = useState<AuthFormState>(DEFAULT_AUTH_FORM);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authMessage, setAuthMessage] = useState("");
+  const [accountMessage, setAccountMessage] = useState("");
+  const [isAccountManagerOpen, setIsAccountManagerOpen] = useState(false);
+  const [adminDurationDays, setAdminDurationDays] = useState(30);
   const [loadState, setLoadState] = useState<LoadState>(() => {
     const initialSheetUrl = readInitialSheetUrl();
     return {
@@ -277,6 +350,10 @@ function App() {
   const [dimension, setDimension] = useState<DimensionKey>("page");
   const [topMetric, setTopMetric] = useState<TopMetric>("leads");
   const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    saveStoredAccounts(accounts);
+  }, [accounts]);
 
   useEffect(() => {
     let cancelled = false;
@@ -412,6 +489,39 @@ function App() {
     );
   }, [filteredRecords, phoneSortDirection, phoneSortKey, searchTerm]);
 
+  const currentAccount = useMemo(
+    () => accounts.find((account) => account.id === currentAccountId) ?? null,
+    [accounts, currentAccountId],
+  );
+
+  const isAdminAccount = currentAccount?.role === "admin";
+
+  const currentAccountState = currentAccount
+    ? getAccountState(currentAccount)
+    : null;
+
+  const pendingEmailAccounts = useMemo(
+    () =>
+      accounts.filter((account) => getAccountState(account) === "pending_email"),
+    [accounts],
+  );
+
+  const pendingAdminAccounts = useMemo(
+    () =>
+      accounts.filter((account) => getAccountState(account) === "pending_admin"),
+    [accounts],
+  );
+
+  const activeAccounts = useMemo(
+    () => accounts.filter((account) => getAccountState(account) === "active"),
+    [accounts],
+  );
+
+  const expiredAccounts = useMemo(
+    () => accounts.filter((account) => getAccountState(account) === "expired"),
+    [accounts],
+  );
+
   const hasActiveFilters = Object.values(filters).some(Boolean);
 
   function updateFilter(key: keyof Filters, value: string) {
@@ -448,6 +558,260 @@ function App() {
 
   function downloadSheetTemplate() {
     downloadCsv(SHEET_TEMPLATE_FILENAME, SAMPLE_CSV);
+  }
+
+  function loginAccount() {
+    const email = normalizeEmail(authForm.email);
+    const password = authForm.password;
+    const account = accounts.find(
+      (item) => normalizeEmail(item.email) === email,
+    );
+
+    if (!email || !password) {
+      setAuthMessage("Vui lòng nhập Gmail và mật khẩu.");
+      return;
+    }
+
+    if (!account || account.password !== password) {
+      setAuthMessage("Tài khoản hoặc mật khẩu không đúng.");
+      return;
+    }
+
+    saveCurrentAccountId(account.id);
+    setCurrentAccountId(account.id);
+    setAuthForm(DEFAULT_AUTH_FORM);
+    setAuthMessage("");
+    setAccountMessage("");
+  }
+
+  function registerAccount() {
+    const email = normalizeEmail(authForm.email);
+    const password = authForm.password.trim();
+    const displayName = authForm.displayName.trim() || email;
+
+    if (!email || !password) {
+      setAuthMessage("Vui lòng nhập Gmail và mật khẩu.");
+      return;
+    }
+
+    if (!isGmailAddress(email)) {
+      setAuthMessage("Vui lòng đăng ký bằng địa chỉ Gmail.");
+      return;
+    }
+
+    if (password.length < 4) {
+      setAuthMessage("Mật khẩu nên có ít nhất 4 ký tự.");
+      return;
+    }
+
+    if (
+      accounts.some((account) => normalizeEmail(account.email) === email)
+    ) {
+      setAuthMessage("Tài khoản này đã tồn tại.");
+      return;
+    }
+
+    const verificationCode = createVerificationCode();
+    const account: AccountRecord = {
+      id: createId(),
+      email,
+      password,
+      displayName,
+      role: "user",
+      createdAt: new Date().toISOString(),
+      verificationCode,
+    };
+
+    setAccounts((current) => [...current, account]);
+    saveCurrentAccountId(account.id);
+    setCurrentAccountId(account.id);
+    setAuthForm({ ...DEFAULT_AUTH_FORM, email });
+    setAuthMessage("");
+    setAccountMessage(
+      `Tài khoản đã tạo. Mã xác thực demo của Gmail này là ${verificationCode}.`,
+    );
+  }
+
+  function requestPasswordReset() {
+    const email = normalizeEmail(authForm.email);
+    const account = accounts.find(
+      (item) => normalizeEmail(item.email) === email,
+    );
+
+    if (!email) {
+      setAuthMessage("Vui lòng nhập Gmail cần lấy lại mật khẩu.");
+      return;
+    }
+
+    if (!account) {
+      setAuthMessage("Không tìm thấy tài khoản với Gmail này.");
+      return;
+    }
+
+    const resetCode = createVerificationCode();
+    setAccounts((current) =>
+      current.map((item) =>
+        item.id === account.id
+          ? {
+              ...item,
+              passwordResetCode: resetCode,
+              passwordResetRequestedAt: new Date().toISOString(),
+            }
+          : item,
+      ),
+    );
+    setAuthForm({ ...DEFAULT_AUTH_FORM, email });
+    setAuthMode("reset");
+    setAuthMessage(`Mã đặt lại mật khẩu demo là ${resetCode}.`);
+  }
+
+  function resetPassword() {
+    const email = normalizeEmail(authForm.email);
+    const resetCode = authForm.resetCode.trim();
+    const password = authForm.password.trim();
+    const account = accounts.find(
+      (item) => normalizeEmail(item.email) === email,
+    );
+
+    if (!email || !resetCode || !password) {
+      setAuthMessage("Vui lòng nhập Gmail, mã đặt lại và mật khẩu mới.");
+      return;
+    }
+
+    if (password.length < 4) {
+      setAuthMessage("Mật khẩu mới nên có ít nhất 4 ký tự.");
+      return;
+    }
+
+    if (!account || account.passwordResetCode !== resetCode) {
+      setAuthMessage("Gmail hoặc mã đặt lại không đúng.");
+      return;
+    }
+
+    setAccounts((current) =>
+      current.map((item) =>
+        item.id === account.id
+          ? {
+              ...item,
+              password,
+              passwordResetCode: undefined,
+              passwordResetRequestedAt: undefined,
+            }
+          : item,
+      ),
+    );
+    setAuthForm({ ...DEFAULT_AUTH_FORM, email });
+    setAuthMode("login");
+    setAuthMessage("Đã đặt lại mật khẩu. Vui lòng đăng nhập lại.");
+  }
+
+  function logoutAccount() {
+    saveCurrentAccountId("");
+    setCurrentAccountId("");
+    setAuthForm(DEFAULT_AUTH_FORM);
+    setAccountMessage("Đã đăng xuất tài khoản.");
+  }
+
+  function verifyCurrentAccountEmail() {
+    if (!currentAccount) return;
+    const code = authForm.verificationCode.trim();
+
+    if (!code) {
+      setAccountMessage("Vui lòng nhập mã xác thực Gmail.");
+      return;
+    }
+
+    if (code !== currentAccount.verificationCode) {
+      setAccountMessage("Mã xác thực không đúng.");
+      return;
+    }
+
+    const verifiedAccount: AccountRecord = {
+      ...currentAccount,
+      emailVerifiedAt: new Date().toISOString(),
+    };
+
+    setAccounts((current) =>
+      current.map((account) =>
+        account.id === currentAccount.id ? verifiedAccount : account,
+      ),
+    );
+    setAuthForm(DEFAULT_AUTH_FORM);
+    setAccountMessage(
+      "Gmail đã xác thực. Vui lòng liên hệ admin để kích hoạt tài khoản.",
+    );
+  }
+
+  function activateOrExtendAccount(accountId: string) {
+    const days = clampInteger(adminDurationDays, 1, 3650);
+    const now = new Date();
+
+    setAccounts((current) =>
+      current.map((account) => {
+        if (account.id !== accountId || account.role === "admin") return account;
+
+        if (!account.emailVerifiedAt) {
+          setAccountMessage("Tài khoản cần xác thực Gmail trước khi kích hoạt.");
+          return account;
+        }
+
+        const currentExpiry = account.expiresAt
+          ? new Date(account.expiresAt)
+          : now;
+        const baseDate =
+          currentExpiry.getTime() > now.getTime() ? currentExpiry : now;
+
+        return {
+          ...account,
+          activatedAt: account.activatedAt ?? now.toISOString(),
+          expiresAt: addDays(baseDate, days).toISOString(),
+        };
+      }),
+    );
+    setAccountMessage(`Đã kích hoạt/gia hạn ${formatNumber(days)} ngày.`);
+  }
+
+  function expireAccount(accountId: string) {
+    const confirmed = window.confirm("Dừng quyền truy cập của tài khoản này?");
+    if (!confirmed) return;
+
+    setAccounts((current) =>
+      current.map((account) =>
+        account.id === accountId
+          ? { ...account, expiresAt: new Date().toISOString() }
+          : account,
+      ),
+    );
+  }
+
+  function removeAccount(accountId: string) {
+    const account = accounts.find((item) => item.id === accountId);
+    if (!account || account.role === "admin") return;
+    const confirmed = window.confirm(`Xóa tài khoản ${account.email}?`);
+    if (!confirmed) return;
+
+    setAccounts((current) => current.filter((item) => item.id !== accountId));
+    if (currentAccountId === accountId) {
+      logoutAccount();
+    }
+  }
+
+  function exportAccounts() {
+    const csv = Papa.unparse(
+      accounts.map((account) => ({
+        email: account.email,
+        displayName: account.displayName,
+        role: account.role,
+        status: getAccountStateLabel(getAccountState(account)),
+        createdAt: formatDateTime(account.createdAt),
+        emailVerifiedAt: formatDateTime(account.emailVerifiedAt),
+        activatedAt: formatDateTime(account.activatedAt),
+        expiresAt: formatDateTime(account.expiresAt),
+        daysLeft: getAccountDaysLeft(account),
+        note: account.note ?? "",
+      })),
+    );
+    downloadCsv(`accounts-${new Date().toISOString().slice(0, 10)}.csv`, csv);
   }
 
   function handlePerformanceSort(key: PerformanceSortKey) {
@@ -519,9 +883,37 @@ function App() {
           <h1>Dashboard hiệu quả quảng cáo</h1>
         </div>
         <div className="topbar-actions">
+          {currentAccount && (
+            <span
+              className={`status-pill ${
+                isAdminAccount ? "status-ready" : "status-loading"
+              }`}
+            >
+              <ShieldCheck size={16} />
+              {currentAccount.email}
+              {isAdminAccount ? " / admin" : ""}
+            </span>
+          )}
+          {!isAdminAccount && currentAccount && currentAccountState === "active" && (
+            <span className="status-pill status-ready">
+              <ShieldCheck size={16} />
+              Còn {getAccountDaysLeft(currentAccount)} ngày
+            </span>
+          )}
           <span className={`status-pill status-${loadState.status}`}>
             {loadState.message}
           </span>
+          {isAdminAccount && (
+            <button
+              className="icon-button"
+              type="button"
+              title="Quản lý tài khoản"
+              onClick={() => setIsAccountManagerOpen((current) => !current)}
+            >
+              <UserCog size={18} />
+              <span>Quản lý tài khoản</span>
+            </button>
+          )}
           <button
             className="icon-button"
             type="button"
@@ -531,9 +923,64 @@ function App() {
             <RefreshCw size={18} />
             <span>Cập nhật</span>
           </button>
+          {currentAccount && (
+            <button
+              className="ghost-button"
+              type="button"
+              title="Đăng xuất tài khoản"
+              onClick={logoutAccount}
+            >
+              <LogOut size={17} />
+              <span>Đăng xuất</span>
+            </button>
+          )}
         </div>
       </header>
 
+      {isAdminAccount && isAccountManagerOpen && (
+        <AccountManager
+          accountMessage={accountMessage}
+          adminDurationDays={adminDurationDays}
+          pendingEmailAccounts={pendingEmailAccounts}
+          pendingAdminAccounts={pendingAdminAccounts}
+          activeAccounts={activeAccounts}
+          expiredAccounts={expiredAccounts}
+          setAdminDurationDays={setAdminDurationDays}
+          activateOrExtendAccount={activateOrExtendAccount}
+          expireAccount={expireAccount}
+          removeAccount={removeAccount}
+          exportAccounts={exportAccounts}
+        />
+      )}
+
+      {!currentAccount ? (
+        <AuthGate
+          authForm={authForm}
+          authMessage={authMessage}
+          authMode={authMode}
+          setAuthForm={setAuthForm}
+          setAuthMode={setAuthMode}
+          loginAccount={loginAccount}
+          registerAccount={registerAccount}
+          requestPasswordReset={requestPasswordReset}
+          resetPassword={resetPassword}
+        />
+      ) : !isAdminAccount && currentAccountState === "pending_email" ? (
+        <EmailVerificationGate
+          currentAccount={currentAccount}
+          authForm={authForm}
+          accountMessage={accountMessage}
+          setAuthForm={setAuthForm}
+          verifyCurrentAccountEmail={verifyCurrentAccountEmail}
+        />
+      ) : !isAdminAccount && currentAccountState !== "active" ? (
+        <PendingActivationGate
+          currentAccount={currentAccount}
+          accountState={currentAccountState}
+          accountMessage={accountMessage}
+        />
+      ) : (
+        <>
       <section className="source-config" aria-label="Cấu hình nguồn dữ liệu">
         <label className="sheet-url-field">
           Link Google Sheet CSV
@@ -994,11 +1441,521 @@ function App() {
           </div>
         </section>
       </main>
+        </>
+      )}
     </div>
   );
 }
 
 const CHART_MARGIN = { top: 12, right: 24, bottom: 8, left: 8 };
+
+function AuthGate({
+  authForm,
+  authMessage,
+  authMode,
+  setAuthForm,
+  setAuthMode,
+  loginAccount,
+  registerAccount,
+  requestPasswordReset,
+  resetPassword,
+}: {
+  authForm: AuthFormState;
+  authMessage: string;
+  authMode: AuthMode;
+  setAuthForm: (value: AuthFormState) => void;
+  setAuthMode: (value: AuthMode) => void;
+  loginAccount: () => void;
+  registerAccount: () => void;
+  requestPasswordReset: () => void;
+  resetPassword: () => void;
+}) {
+  const isRegister = authMode === "register";
+  const isForgot = authMode === "forgot";
+  const isReset = authMode === "reset";
+  const title = isForgot
+    ? "Lấy lại mật khẩu bằng Gmail"
+    : isReset
+      ? "Đặt lại mật khẩu"
+      : isRegister
+        ? "Đăng ký Gmail để chờ admin kích hoạt"
+        : "Tài khoản được admin kích hoạt theo thời hạn";
+  const primaryLabel = isForgot
+    ? "Gửi mã đặt lại"
+    : isReset
+      ? "Đặt lại mật khẩu"
+      : isRegister
+        ? "Đăng ký Gmail"
+        : "Đăng nhập";
+  const primaryAction = isForgot
+    ? requestPasswordReset
+    : isReset
+      ? resetPassword
+      : isRegister
+        ? registerAccount
+        : loginAccount;
+
+  function updateForm<K extends keyof AuthFormState>(
+    key: K,
+    value: AuthFormState[K],
+  ) {
+    setAuthForm({ ...authForm, [key]: value });
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") {
+      primaryAction();
+    }
+  }
+
+  return (
+    <main className="license-main">
+      <section className="license-gate">
+        <div className="license-gate-copy">
+          <p className="eyebrow">Đăng nhập tài khoản</p>
+          <h2>{title}</h2>
+          <p>
+            Khách đăng ký bằng Gmail, xác thực Gmail, rồi liên hệ admin để được
+            kích hoạt hoặc gia hạn quyền dùng dashboard.
+          </p>
+        </div>
+        <div className="license-card">
+          <div className="license-icon">
+            <Lock size={28} />
+          </div>
+          {isRegister && (
+            <label>
+              Tên hiển thị
+              <input
+                type="text"
+                value={authForm.displayName}
+                onChange={(event) => updateForm("displayName", event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="VD: Khách A"
+              />
+            </label>
+          )}
+          <label>
+            Gmail
+            <input
+              type="email"
+              value={authForm.email}
+              onChange={(event) => updateForm("email", event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="tenkhach@gmail.com"
+            />
+          </label>
+          {(isReset || !isForgot) && (
+            <label>
+              {isReset ? "Mật khẩu mới" : "Mật khẩu"}
+              <input
+                type="password"
+                value={authForm.password}
+                onChange={(event) => updateForm("password", event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={isReset ? "Nhập mật khẩu mới" : "Nhập mật khẩu"}
+              />
+            </label>
+          )}
+          {isReset && (
+            <label>
+              Mã đặt lại mật khẩu
+              <input
+                type="text"
+                value={authForm.resetCode}
+                onChange={(event) => updateForm("resetCode", event.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Nhập mã đặt lại"
+              />
+            </label>
+          )}
+          <button
+            className="icon-button primary-button"
+            type="button"
+            onClick={primaryAction}
+          >
+            {isRegister ? <UserPlus size={18} /> : <ShieldCheck size={18} />}
+            <span>{primaryLabel}</span>
+          </button>
+          <div className="auth-link-row">
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => setAuthMode(isRegister ? "login" : "register")}
+            >
+              {isRegister ? "Đã có tài khoản" : "Tạo tài khoản khách"}
+            </button>
+            {!isForgot && !isReset && (
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => setAuthMode("forgot")}
+              >
+                Quên mật khẩu
+              </button>
+            )}
+            {(isForgot || isReset) && (
+              <button
+                className="text-button"
+                type="button"
+                onClick={() => setAuthMode("login")}
+              >
+                Quay lại đăng nhập
+              </button>
+            )}
+          </div>
+          {authMessage && <p className="license-message">{authMessage}</p>}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function EmailVerificationGate({
+  currentAccount,
+  authForm,
+  accountMessage,
+  setAuthForm,
+  verifyCurrentAccountEmail,
+}: {
+  currentAccount: AccountRecord;
+  authForm: AuthFormState;
+  accountMessage: string;
+  setAuthForm: (value: AuthFormState) => void;
+  verifyCurrentAccountEmail: () => void;
+}) {
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "Enter") verifyCurrentAccountEmail();
+  }
+
+  return (
+    <main className="license-main">
+      <section className="license-gate">
+        <div className="license-gate-copy">
+          <p className="eyebrow">Xác thực Gmail</p>
+          <h2>Xác thực tài khoản trước khi liên hệ admin</h2>
+          <p>
+            Tài khoản <strong>{currentAccount.email}</strong> cần xác thực Gmail.
+            Bản local hiện hiển thị mã demo trong thông báo sau khi đăng ký.
+          </p>
+        </div>
+        <div className="license-card">
+          <div className="license-icon">
+            <MailCheck size={28} />
+          </div>
+          <label>
+            Mã xác thực Gmail
+            <input
+              type="text"
+              value={authForm.verificationCode}
+              onChange={(event) =>
+                setAuthForm({
+                  ...authForm,
+                  verificationCode: event.target.value,
+                })
+              }
+              onKeyDown={handleKeyDown}
+              placeholder="Nhập mã xác thực"
+            />
+          </label>
+          <button
+            className="icon-button primary-button"
+            type="button"
+            onClick={verifyCurrentAccountEmail}
+          >
+            <CheckCircle2 size={18} />
+            <span>Xác thực Gmail</span>
+          </button>
+          {accountMessage && <p className="license-message">{accountMessage}</p>}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function PendingActivationGate({
+  currentAccount,
+  accountState,
+  accountMessage,
+}: {
+  currentAccount: AccountRecord;
+  accountState: AccountState | null;
+  accountMessage: string;
+}) {
+  const isExpired = accountState === "expired";
+
+  return (
+    <main className="license-main">
+      <section className="license-gate">
+        <div className="license-gate-copy">
+          <p className="eyebrow">
+            {isExpired ? "Tài khoản hết hạn" : "Chờ admin kích hoạt"}
+          </p>
+          <h2>
+            {isExpired
+              ? "Liên hệ admin để gia hạn tài khoản"
+              : "Liên hệ admin để mở quyền dashboard"}
+          </h2>
+          <p>
+            Gmail <strong>{currentAccount.email}</strong> đã xác thực. Admin sẽ
+            kích hoạt hoặc gia hạn thời gian sử dụng trực tiếp trên tài khoản này.
+          </p>
+        </div>
+        <div className="license-card">
+          <div className="license-icon">
+            <MessageCircle size={28} />
+          </div>
+          <ContactAdminPanel />
+          {accountMessage && <p className="license-message">{accountMessage}</p>}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function ContactAdminPanel() {
+  const contacts = buildAdminContacts();
+
+  return (
+    <div className="contact-list">
+      {contacts.length > 0 ? (
+        contacts.map((contact) => (
+          <a key={contact.label} href={contact.href} target="_blank" rel="noreferrer">
+            {contact.label}
+          </a>
+        ))
+      ) : (
+        <p>
+          Admin chưa cấu hình thông tin liên hệ. Vui lòng cập nhật số điện thoại,
+          Telegram, Zalo hoặc Facebook trong file `.env`.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function AccountManager({
+  accountMessage,
+  adminDurationDays,
+  pendingEmailAccounts,
+  pendingAdminAccounts,
+  activeAccounts,
+  expiredAccounts,
+  setAdminDurationDays,
+  activateOrExtendAccount,
+  expireAccount,
+  removeAccount,
+  exportAccounts,
+}: {
+  accountMessage: string;
+  adminDurationDays: number;
+  pendingEmailAccounts: AccountRecord[];
+  pendingAdminAccounts: AccountRecord[];
+  activeAccounts: AccountRecord[];
+  expiredAccounts: AccountRecord[];
+  setAdminDurationDays: (value: number) => void;
+  activateOrExtendAccount: (accountId: string) => void;
+  expireAccount: (accountId: string) => void;
+  removeAccount: (accountId: string) => void;
+  exportAccounts: () => void;
+}) {
+  const totalAccounts =
+    pendingEmailAccounts.length +
+    pendingAdminAccounts.length +
+    activeAccounts.length +
+    expiredAccounts.length;
+
+  return (
+    <section className="license-manager" aria-label="Quản lý tài khoản">
+      <div className="panel-heading">
+        <div>
+          <h2>Quản lý tài khoản</h2>
+          <p>Kích hoạt, gia hạn và theo dõi thời hạn sử dụng theo từng Gmail.</p>
+        </div>
+        <button
+          className="icon-button"
+          type="button"
+          onClick={exportAccounts}
+          disabled={totalAccounts === 0}
+        >
+          <Download size={17} />
+          <span>Xuất tài khoản</span>
+        </button>
+      </div>
+
+      {accountMessage && <div className="license-notice">{accountMessage}</div>}
+
+      {(ADMIN_EMAIL === "admin@gmail.com" || ADMIN_PASSWORD === "admin123") && (
+        <div className="warning-banner">
+          Đang dùng tài khoản admin mặc định. Khi đưa app lên online, hãy đặt
+          <strong> VITE_ADMIN_EMAIL</strong> và{" "}
+          <strong>VITE_ADMIN_PASSWORD</strong> trước khi build.
+        </div>
+      )}
+
+      <div className="license-stats">
+        <div>
+          <span>Chờ xác thực Gmail</span>
+          <strong>{formatNumber(pendingEmailAccounts.length)}</strong>
+        </div>
+        <div>
+          <span>Chờ kích hoạt</span>
+          <strong>{formatNumber(pendingAdminAccounts.length)}</strong>
+        </div>
+        <div>
+          <span>Đang hoạt động</span>
+          <strong>{formatNumber(activeAccounts.length)}</strong>
+        </div>
+        <div>
+          <span>Hết hạn</span>
+          <strong>{formatNumber(expiredAccounts.length)}</strong>
+        </div>
+      </div>
+
+      <div className="license-form account-renewal-form">
+        <label>
+          Số ngày kích hoạt/gia hạn
+          <input
+            type="number"
+            min={1}
+            max={3650}
+            value={adminDurationDays}
+            onChange={(event) =>
+              setAdminDurationDays(Number(event.target.value))
+            }
+          />
+        </label>
+      </div>
+
+      <AccountTable
+        title="Chờ xác thực Gmail"
+        rows={pendingEmailAccounts}
+        emptyText="Không có tài khoản chờ xác thực"
+        activateOrExtendAccount={activateOrExtendAccount}
+        expireAccount={expireAccount}
+        removeAccount={removeAccount}
+      />
+      <AccountTable
+        title="Chờ admin kích hoạt"
+        rows={pendingAdminAccounts}
+        emptyText="Không có tài khoản chờ kích hoạt"
+        activateOrExtendAccount={activateOrExtendAccount}
+        expireAccount={expireAccount}
+        removeAccount={removeAccount}
+      />
+      <AccountTable
+        title="Đang hoạt động"
+        rows={activeAccounts}
+        emptyText="Không có tài khoản đang hoạt động"
+        activateOrExtendAccount={activateOrExtendAccount}
+        expireAccount={expireAccount}
+        removeAccount={removeAccount}
+      />
+      <AccountTable
+        title="Hết hạn"
+        rows={expiredAccounts}
+        emptyText="Không có tài khoản hết hạn"
+        activateOrExtendAccount={activateOrExtendAccount}
+        expireAccount={expireAccount}
+        removeAccount={removeAccount}
+      />
+    </section>
+  );
+}
+
+function AccountTable({
+  title,
+  rows,
+  emptyText,
+  activateOrExtendAccount,
+  expireAccount,
+  removeAccount,
+}: {
+  title: string;
+  rows: AccountRecord[];
+  emptyText: string;
+  activateOrExtendAccount: (accountId: string) => void;
+  expireAccount: (accountId: string) => void;
+  removeAccount: (accountId: string) => void;
+}) {
+  return (
+    <div className="license-table-block">
+      <h3>{title}</h3>
+      <div className="table-scroll compact-table-scroll">
+        <table className="license-table">
+          <thead>
+            <tr>
+              <th>Gmail</th>
+              <th>Tên</th>
+              <th>Trạng thái</th>
+              <th>Ngày tạo</th>
+              <th>Xác thực Gmail</th>
+              <th>Kích hoạt</th>
+              <th>Hết hạn</th>
+              <th>Còn lại</th>
+              <th>Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length > 0 ? (
+              rows.map((account) => (
+                <tr key={account.id}>
+                  <td className="account-email-cell">{account.email}</td>
+                  <td>{account.displayName || "Chưa ghi"}</td>
+                  <td>{getAccountStateLabel(getAccountState(account))}</td>
+                  <td>{formatDateTime(account.createdAt)}</td>
+                  <td>{formatDateTime(account.emailVerifiedAt)}</td>
+                  <td>{formatDateTime(account.activatedAt)}</td>
+                  <td>{formatDateTime(account.expiresAt)}</td>
+                  <td className="right">
+                    {account.expiresAt
+                      ? `${formatNumber(getAccountDaysLeft(account))} ngày`
+                      : "Chưa có"}
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <button
+                        className="mini-icon-button"
+                        type="button"
+                        title="Kích hoạt hoặc gia hạn"
+                        onClick={() => activateOrExtendAccount(account.id)}
+                        disabled={!account.emailVerifiedAt}
+                      >
+                        <Plus size={15} />
+                      </button>
+                      <button
+                        className="mini-icon-button"
+                        type="button"
+                        title="Dừng quyền truy cập"
+                        onClick={() => expireAccount(account.id)}
+                      >
+                        <Lock size={15} />
+                      </button>
+                      <button
+                        className="mini-icon-button danger"
+                        type="button"
+                        title="Xóa tài khoản"
+                        onClick={() => removeAccount(account.id)}
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td className="empty-cell" colSpan={9}>
+                  {emptyText}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function SelectFilter({
   label,
@@ -1092,6 +2049,95 @@ function readInitialSheetUrl() {
   );
 }
 
+function readStoredAccounts(): AccountRecord[] {
+  const defaultAdmin = createDefaultAdminAccount();
+
+  if (typeof window === "undefined") return [defaultAdmin];
+
+  try {
+    const raw = window.localStorage.getItem(ACCOUNTS_STORAGE_KEY);
+    if (!raw) return [defaultAdmin];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [defaultAdmin];
+    const accounts = parsed
+      .filter((item) => item && (item.email || item.username))
+      .map((item): AccountRecord => ({
+        id: String(item.id || createId()),
+        email: normalizeEmail(String(item.email || item.username)),
+        password: String(item.password || ""),
+        displayName: String(item.displayName || item.email || item.username || ""),
+        role: item.role === "admin" ? "admin" : "user",
+        createdAt: String(item.createdAt || new Date().toISOString()),
+        emailVerifiedAt: item.emailVerifiedAt
+          ? String(item.emailVerifiedAt)
+          : item.role === "admin"
+            ? String(item.createdAt || new Date().toISOString())
+            : undefined,
+        verificationCode: item.verificationCode
+          ? String(item.verificationCode)
+          : createVerificationCode(),
+        passwordResetCode: item.passwordResetCode
+          ? String(item.passwordResetCode)
+          : undefined,
+        passwordResetRequestedAt: item.passwordResetRequestedAt
+          ? String(item.passwordResetRequestedAt)
+          : undefined,
+        activatedAt: item.activatedAt ? String(item.activatedAt) : undefined,
+        expiresAt: item.expiresAt ? String(item.expiresAt) : undefined,
+        note: item.note ? String(item.note) : "",
+      }));
+
+    if (
+      !accounts.some(
+        (account) => normalizeEmail(account.email) === defaultAdmin.email,
+      )
+    ) {
+      return [
+        defaultAdmin,
+        ...accounts.filter((account) => account.id !== defaultAdmin.id),
+      ];
+    }
+
+    return accounts;
+  } catch {
+    return [defaultAdmin];
+  }
+}
+
+function saveStoredAccounts(accounts: AccountRecord[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(accounts));
+}
+
+function createDefaultAdminAccount(): AccountRecord {
+  const now = new Date().toISOString();
+  return {
+    id: "default-admin",
+    email: normalizeEmail(ADMIN_EMAIL),
+    password: ADMIN_PASSWORD,
+    displayName: "Quản trị viên",
+    role: "admin",
+    createdAt: now,
+    emailVerifiedAt: now,
+    activatedAt: now,
+  };
+}
+
+function readCurrentAccountId() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage.getItem(CURRENT_ACCOUNT_STORAGE_KEY) || "";
+}
+
+function saveCurrentAccountId(accountId: string) {
+  if (typeof window === "undefined") return;
+
+  if (accountId) {
+    window.localStorage.setItem(CURRENT_ACCOUNT_STORAGE_KEY, accountId);
+  } else {
+    window.localStorage.removeItem(CURRENT_ACCOUNT_STORAGE_KEY);
+  }
+}
+
 function downloadCsv(filename: string, csv: string) {
   const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -1100,6 +2146,108 @@ function downloadCsv(filename: string, csv: string) {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+function addDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+  return nextDate;
+}
+
+function getAccountState(account: AccountRecord): AccountState {
+  if (account.role === "admin") return "admin";
+  if (!account.emailVerifiedAt) return "pending_email";
+  if (!account.expiresAt) return "pending_admin";
+
+  const expiresAt = new Date(account.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return "expired";
+  return "active";
+}
+
+function getAccountStateLabel(state: AccountState) {
+  if (state === "admin") return "Quản trị viên";
+  if (state === "pending_email") return "Chờ xác thực Gmail";
+  if (state === "pending_admin") return "Chờ admin kích hoạt";
+  if (state === "expired") return "Hết hạn";
+  return "Đang hoạt động";
+}
+
+function getAccountDaysLeft(account: AccountRecord) {
+  if (!account.expiresAt) return 0;
+  const expiresAt = new Date(account.expiresAt).getTime();
+  if (!Number.isFinite(expiresAt)) return 0;
+  return Math.max(0, Math.ceil((expiresAt - Date.now()) / 86_400_000));
+}
+
+function createVerificationCode() {
+  const bytes = new Uint8Array(3);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => String(byte % 10)).join("");
+}
+
+function createId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function isGmailAddress(email: string) {
+  return /^[^\s@]+@gmail\.com$/i.test(email);
+}
+
+function buildAdminContacts() {
+  const contacts: Array<{ label: string; href: string }> = [];
+
+  if (ADMIN_PHONE) {
+    contacts.push({ label: `Điện thoại: ${ADMIN_PHONE}`, href: `tel:${ADMIN_PHONE}` });
+  }
+  if (ADMIN_TELEGRAM) {
+    contacts.push({
+      label: "Telegram",
+      href: ADMIN_TELEGRAM.startsWith("http")
+        ? ADMIN_TELEGRAM
+        : `https://t.me/${ADMIN_TELEGRAM.replace(/^@/, "")}`,
+    });
+  }
+  if (ADMIN_ZALO) {
+    contacts.push({
+      label: "Zalo",
+      href: ADMIN_ZALO.startsWith("http")
+        ? ADMIN_ZALO
+        : `https://zalo.me/${ADMIN_ZALO}`,
+    });
+  }
+  if (ADMIN_FACEBOOK) {
+    contacts.push({
+      label: "Facebook",
+      href: ADMIN_FACEBOOK.startsWith("http")
+        ? ADMIN_FACEBOOK
+        : `https://facebook.com/${ADMIN_FACEBOOK}`,
+    });
+  }
+
+  return contacts;
+}
+
+function clampInteger(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+function formatDateTime(value?: string) {
+  if (!value) return "Chưa có";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Chưa có";
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }
 
 async function fetchCsv(url: string) {

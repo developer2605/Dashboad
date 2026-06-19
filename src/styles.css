@@ -127,6 +127,257 @@ button:disabled {
   background: #f8fafc;
 }
 
+.primary-button {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.primary-button:hover {
+  border-color: var(--accent-strong);
+  background: var(--accent-strong);
+}
+
+.status-pill svg {
+  margin-right: 6px;
+}
+
+.license-main {
+  max-width: 1500px;
+  margin: 0 auto;
+}
+
+.license-gate {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 430px);
+  gap: 18px;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.license-gate-copy {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  min-height: 280px;
+}
+
+.license-gate-copy h2 {
+  margin: 0;
+  color: #111827;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: 1.05;
+  letter-spacing: 0;
+}
+
+.license-gate-copy p {
+  max-width: 640px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.license-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.license-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: #e8f1fb;
+  color: var(--accent);
+}
+
+.auth-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.text-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.text-button:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
+.license-message,
+.license-notice {
+  margin: 0;
+  border: 1px solid rgba(35, 100, 170, 0.24);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #eef6ff;
+  color: #174c84;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.contact-list {
+  display: grid;
+  gap: 10px;
+}
+
+.contact-list a,
+.contact-list p {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 12px;
+  background: #fff;
+  color: #174c84;
+  font-size: 14px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.contact-list a:hover {
+  border-color: var(--accent);
+  background: #eef6ff;
+}
+
+.license-manager {
+  display: grid;
+  gap: 14px;
+  margin: 0 auto 18px;
+  max-width: 1500px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.admin-lock {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.warning-banner {
+  border: 1px solid rgba(217, 119, 6, 0.34);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.license-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.license-stats div {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.license-stats span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.license-stats strong {
+  color: #111827;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.license-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 130px 130px minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.account-renewal-form {
+  grid-template-columns: minmax(220px, 320px);
+}
+
+.license-table-block {
+  display: grid;
+  gap: 8px;
+}
+
+.license-table-block h3 {
+  margin: 4px 0 0;
+  color: #111827;
+  font-size: 16px;
+}
+
+.compact-table-scroll {
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.license-table {
+  min-width: 1120px;
+}
+
+.account-email-cell {
+  color: var(--accent-strong);
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-weight: 900;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mini-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+}
+
+.mini-icon-button:hover {
+  border-color: #aeb9c9;
+  background: #f8fafc;
+}
+
+.mini-icon-button.danger {
+  color: #b42318;
+}
+
 .source-config {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) auto auto;
@@ -464,6 +715,16 @@ tbody tr:hover {
   }
 
   .source-config {
+    grid-template-columns: 1fr;
+  }
+
+  .license-gate,
+  .admin-lock,
+  .license-form {
+    grid-template-columns: 1fr;
+  }
+
+  .license-stats {
     grid-template-columns: 1fr;
   }
 
