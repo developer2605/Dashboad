@@ -85,7 +85,7 @@ App cũng nhận một số tên cột tiếng Việt phổ biến như `ngày`,
 
 Dashboard có:
 
-- KPI tổng quan: chi tiêu, mess, bình luận, lead từ nguồn hiệu quả ads; SĐT hợp lệ và duy nhất từ nguồn danh sách SĐT.
+- KPI tổng quan: chi tiêu, mess, bình luận, SĐT/Mess hiển thị theo %, SĐT hợp lệ tính cả trùng và SĐT duy nhất không tính trùng từ nguồn danh sách SĐT.
 - Biểu đồ xu hướng theo ngày từ nguồn hiệu quả ads.
 - Biểu đồ so sánh theo page, tài khoản quảng cáo, dịch vụ và ad id từ nguồn hiệu quả ads.
 - Biểu đồ giới tính từ nguồn danh sách SĐT.

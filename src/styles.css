@@ -374,6 +374,11 @@ button:disabled {
   background: #f8fafc;
 }
 
+.mini-icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .mini-icon-button.danger {
   color: #b42318;
 }
@@ -606,6 +611,52 @@ main {
   max-height: 640px;
 }
 
+.table-scroll-paged {
+  max-height: 520px;
+}
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+  background: #f8fafc;
+}
+
+.table-pagination p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-size-field {
+  display: flex;
+  grid-template-columns: unset;
+  align-items: center;
+  gap: 8px;
+}
+
+.page-size-field select {
+  width: 74px;
+  min-height: 32px;
+}
+
+.page-counter {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
 table {
   width: 100%;
   min-width: 980px;
@@ -712,6 +763,12 @@ tbody tr:hover {
   .topbar-actions,
   .table-actions {
     justify-content: flex-start;
+  }
+
+  .table-pagination,
+  .pagination-actions {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .source-config {

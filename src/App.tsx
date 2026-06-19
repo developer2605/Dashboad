@@ -26,6 +26,8 @@ import {
   ArrowUp,
   ArrowUpDown,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Download,
   FileDown,
   FilterX,
@@ -127,6 +129,7 @@ interface MetricSummary {
   leads: number;
   validPhones: number;
   uniquePhones: number;
+  phonePerMessage: number;
   costPerMessage: number;
   costPerLead: number;
 }
@@ -350,6 +353,8 @@ const CHART_COLORS = {
   leads: "#c2410c",
 };
 
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+
 const PERFORMANCE_TABLE_COLUMNS: Array<{
   key: PerformanceSortKey;
   label: string;
@@ -435,6 +440,10 @@ function App() {
   const [phoneSortKey, setPhoneSortKey] = useState<PhoneSortKey>("phoneList");
   const [phoneSortDirection, setPhoneSortDirection] =
     useState<SortDirection>("asc");
+  const [performancePage, setPerformancePage] = useState(1);
+  const [performancePageSize, setPerformancePageSize] = useState(10);
+  const [phonePage, setPhonePage] = useState(1);
+  const [phonePageSize, setPhonePageSize] = useState(10);
   const [dimension, setDimension] = useState<DimensionKey>("page");
   const [topMetric, setTopMetric] = useState<TopMetric>("leads");
   const [refreshTick, setRefreshTick] = useState(0);
@@ -697,6 +706,10 @@ function App() {
     searchTerm,
   ]);
 
+  useEffect(() => {
+    setPerformancePage(1);
+  }, [filters, searchTerm, performancePageSize]);
+
   const phoneRows = useMemo(() => {
     const normalizedSearch = normalizeSearch(searchTerm);
     const rows = buildPhoneRows(filteredPhoneRecords);
@@ -710,6 +723,20 @@ function App() {
       compareTableRows(a, b, phoneSortKey, phoneSortDirection),
     );
   }, [filteredPhoneRecords, phoneSortDirection, phoneSortKey, searchTerm]);
+
+  useEffect(() => {
+    setPhonePage(1);
+  }, [filters, searchTerm, phonePageSize]);
+
+  const performancePagination = useMemo(
+    () => paginateRows(performanceRows, performancePage, performancePageSize),
+    [performanceRows, performancePage, performancePageSize],
+  );
+
+  const phonePagination = useMemo(
+    () => paginateRows(phoneRows, phonePage, phonePageSize),
+    [phoneRows, phonePage, phonePageSize],
+  );
 
   const currentAccount = useMemo(
     () => accounts.find((account) => account.id === currentAccountId) ?? null,
@@ -1550,7 +1577,10 @@ function App() {
           <KpiCard label="Tổng chi tiêu" value={formatMoney(summary.spend)} />
           <KpiCard label="Tổng mess" value={formatNumber(summary.messages)} />
           <KpiCard label="Bình luận" value={formatNumber(summary.comments)} />
-          <KpiCard label="Lead/SĐT" value={formatNumber(summary.leads)} />
+          <KpiCard
+            label="SĐT/Mess"
+            value={formatPercent(summary.phonePerMessage)}
+          />
           <KpiCard
             label="SĐT hợp lệ"
             value={formatNumber(summary.validPhones)}
@@ -1778,7 +1808,11 @@ function App() {
             </div>
           </div>
 
-          <div className="table-scroll">
+          <div
+            className={`table-scroll ${
+              performancePagination.isScrollable ? "table-scroll-paged" : ""
+            }`}
+          >
             <table>
               <thead>
                 <tr>
@@ -1806,7 +1840,7 @@ function App() {
               </thead>
               <tbody>
                 {performanceRows.length > 0 ? (
-                  performanceRows.map((row) => (
+                  performancePagination.rows.map((row) => (
                     <tr key={row.id}>
                       <td>{row.adId}</td>
                       <td>{row.page}</td>
@@ -1831,6 +1865,15 @@ function App() {
               </tbody>
             </table>
           </div>
+          {performanceRows.length > 0 && (
+            <PaginationControls
+              label="Bảng 1"
+              pagination={performancePagination}
+              pageSize={performancePageSize}
+              onPageChange={setPerformancePage}
+              onPageSizeChange={setPerformancePageSize}
+            />
+          )}
         </section>
 
         <section className="table-section" aria-label="Bảng danh sách số điện thoại">
@@ -1856,7 +1899,11 @@ function App() {
             </div>
           </div>
 
-          <div className="table-scroll">
+          <div
+            className={`table-scroll ${
+              phonePagination.isScrollable ? "table-scroll-paged" : ""
+            }`}
+          >
             <table className="phone-table">
               <thead>
                 <tr>
@@ -1884,7 +1931,7 @@ function App() {
               </thead>
               <tbody>
                 {phoneRows.length > 0 ? (
-                  phoneRows.map((row) => (
+                  phonePagination.rows.map((row) => (
                     <tr key={row.id}>
                       <td className="phone-list-cell">{row.phoneList}</td>
                       <td>{row.adId}</td>
@@ -1903,6 +1950,15 @@ function App() {
               </tbody>
             </table>
           </div>
+          {phoneRows.length > 0 && (
+            <PaginationControls
+              label="Bảng 2"
+              pagination={phonePagination}
+              pageSize={phonePageSize}
+              onPageChange={setPhonePage}
+              onPageSizeChange={setPhonePageSize}
+            />
+          )}
         </section>
       </main>
         </>
@@ -1912,6 +1968,17 @@ function App() {
 }
 
 const CHART_MARGIN = { top: 12, right: 24, bottom: 8, left: 8 };
+
+interface PaginationState<T> {
+  rows: T[];
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  total: number;
+  start: number;
+  end: number;
+  isScrollable: boolean;
+}
 
 function AuthLoadingGate() {
   return (
@@ -1930,6 +1997,65 @@ function AuthLoadingGate() {
         </div>
       </section>
     </main>
+  );
+}
+
+function PaginationControls<T>({
+  label,
+  pagination,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  label: string;
+  pagination: PaginationState<T>;
+  pageSize: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  return (
+    <div className="table-pagination" aria-label={`Phân trang ${label}`}>
+      <p>
+        Hiển thị {formatNumber(pagination.start)}-{formatNumber(pagination.end)} /{" "}
+        {formatNumber(pagination.total)} dòng
+      </p>
+      <div className="pagination-actions">
+        <label className="page-size-field">
+          Dòng/trang
+          <select
+            value={pageSize}
+            onChange={(event) => onPageSizeChange(Number(event.target.value))}
+          >
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="mini-icon-button"
+          type="button"
+          title="Trang trước"
+          onClick={() => onPageChange(pagination.page - 1)}
+          disabled={pagination.page <= 1}
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <span className="page-counter">
+          Trang {formatNumber(pagination.page)} / {formatNumber(pagination.pageCount)}
+        </span>
+        <button
+          className="mini-icon-button"
+          type="button"
+          title="Trang sau"
+          onClick={() => onPageChange(pagination.page + 1)}
+          disabled={pagination.page >= pagination.pageCount}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -3161,6 +3287,7 @@ function summarizeRecords(
       leads: 0,
       validPhones: 0,
       uniquePhones: 0,
+      phonePerMessage: 0,
       costPerMessage: 0,
       costPerLead: 0,
     },
@@ -3173,6 +3300,7 @@ function summarizeRecords(
   });
 
   summary.uniquePhones = phoneSet.size;
+  summary.phonePerMessage = summary.messages ? summary.leads / summary.messages : 0;
   summary.costPerMessage = summary.messages ? summary.spend / summary.messages : 0;
   summary.costPerLead = summary.leads ? summary.spend / summary.leads : 0;
   return summary;
@@ -3194,6 +3322,7 @@ function buildTrendData(records: PerformanceRecord[]) {
         leads: 0,
         validPhones: 0,
         uniquePhones: 0,
+        phonePerMessage: 0,
         costPerMessage: 0,
         costPerLead: 0,
       } satisfies MetricSummary & { label: string });
@@ -3230,6 +3359,7 @@ function buildGroupedData(
         leads: 0,
         validPhones: 0,
         uniquePhones: 0,
+        phonePerMessage: 0,
         costPerMessage: 0,
         costPerLead: 0,
       } satisfies MetricSummary & { name: string });
@@ -3352,6 +3482,30 @@ function joinUniqueSet(values: Set<string>) {
   return Array.from(values).filter(Boolean).join(", ");
 }
 
+function paginateRows<T>(
+  rows: T[],
+  page: number,
+  pageSize: number,
+): PaginationState<T> {
+  const resolvedPageSize = PAGE_SIZE_OPTIONS.includes(pageSize) ? pageSize : 10;
+  const pageCount = Math.max(1, Math.ceil(rows.length / resolvedPageSize));
+  const resolvedPage = clampInteger(page, 1, pageCount);
+  const startIndex = (resolvedPage - 1) * resolvedPageSize;
+  const pageRows = rows.slice(startIndex, startIndex + resolvedPageSize);
+  const end = Math.min(rows.length, startIndex + pageRows.length);
+
+  return {
+    rows: pageRows,
+    page: resolvedPage,
+    pageSize: resolvedPageSize,
+    pageCount,
+    total: rows.length,
+    start: rows.length > 0 ? startIndex + 1 : 0,
+    end,
+    isScrollable: resolvedPageSize > 10 && pageRows.length > 10,
+  };
+}
+
 function makeGroupId(...parts: string[]) {
   return parts.map((part) => normalizeSearch(part)).join("::");
 }
@@ -3412,6 +3566,14 @@ function formatMoney(value: number) {
 
 function formatNumber(value: number) {
   return numberFormatter.format(Math.round(value));
+}
+
+function formatPercent(value: number) {
+  return new Intl.NumberFormat("vi-VN", {
+    style: "percent",
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 0,
+  }).format(value);
 }
 
 function formatTooltipValue(value: number, name: string) {
